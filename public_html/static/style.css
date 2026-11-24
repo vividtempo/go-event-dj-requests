@@ -197,3 +197,9 @@ label{font-weight:600}
 .qr-page .url{color:#000}
 }
 
+
+/* Flexible guest links and settings fields. */
+.tiprow{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
+.tiprow .btn{overflow-wrap:anywhere}
+#api-key{font-family:monospace;font-size:12px;margin-top:10px}
+.panel code{overflow-wrap:anywhere}

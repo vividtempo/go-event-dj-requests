@@ -2,7 +2,7 @@ const $ = id=>document.getElementById(id);
 let csrf='', events=[],selectedEvent=null, songs=[], statusFilter='pending';
 function msg(text,bad=false){const x=$('flash');x.textContent=text;x.className='flash'+(bad?' bad':'');clearTimeout(window.flashTimer);window.flashTimer=setTimeout(()=>x.className='hidden',5500)}
 async function api(url, method='GET', body=null){const headers={};if(body!==null)headers['content-type']='application/json';if(csrf&&method!=='GET')headers['x-csrf-token']=csrf;const res=await fetch(url,{method,headers,credentials:'same-origin',body:body!==null?JSON.stringify(body):undefined});const data=await res.json().catch(()=>({}));if(!res.ok){if(res.status===401&&url!=='/api/admin/login')showLogin();throw Error(data.detail||'Request failed')}return data;}
-function showLogin(){$('login-screen').className='panel login';$('dashboard').className='hidden';csrf=''}
+function showLogin(){$('login-screen').className='panel login';$('dashboard').className='hidden';csrf='';clearApiKey()}
 function showDashboard(){$('login-screen').className='hidden';$('dashboard').className='';}
 function node(t,c,s){const n=document.createElement(t);if(c)n.className=c;if(s!==undefined)n.textContent=s;return n}
 function btn(text,action,variant='small'){const b=node('button','btn '+variant,text);b.type='button';b.addEventListener('click',action);return b}
@@ -17,11 +17,22 @@ function renderQueue(){const box=$('queue-list');box.replaceChildren();const fil
 async function setStatus(id,status){try{await api(`/api/admin/requests/${id}/status`,'POST',{status});await loadQueue();}catch(e){msg(e.message,true)}}
 $('login-form').addEventListener('submit',async e=>{e.preventDefault();$('login-btn').disabled=true;try{const r=await api('/api/admin/login','POST',{password:$('password').value});csrf=r.csrf;$('password').value='';showDashboard();await refresh();await loadSettings();}catch(err){msg(err.message,true)}finally{$('login-btn').disabled=false}});
 $('event-form').addEventListener('submit',async e=>{e.preventDefault();try{await api('/api/admin/events','POST',{name:$('event-name').value,date:$('event-date').value,venue:$('event-venue').value});e.target.reset();msg('Event created. Activate it to receive requests.');await refresh();}catch(err){msg(err.message,true)}});
-async function loadSettings(){const r=await api('/api/admin/settings');$('tip-url').value=r.tip_url||'';$('review-url').value=r.review_url||''}
-$('settings-form').addEventListener('submit',async e=>{e.preventDefault();try{await api('/api/admin/settings','POST',{tip_url:$('tip-url').value,review_url:$('review-url').value});msg('Links saved.');}catch(err){msg(err.message,true)}});
+async function loadSettings(){const r=await api('/api/admin/settings');$('tip-url').value=r.tip_url||'';$('review-url').value=r.review_url||'';renderCustomLinks(r.custom_links||[]);await loadApiSettings()}
+$('settings-form').addEventListener('submit',async e=>{e.preventDefault();try{await api('/api/admin/settings','POST',{tip_url:$('tip-url').value,review_url:$('review-url').value,custom_links:readCustomLinks()});msg('Links saved.');}catch(err){msg(err.message,true)}});
 $('logout').addEventListener('click',async()=>{try{await api('/api/admin/logout','POST',{});}finally{showLogin()}});
 $('refresh').addEventListener('click',()=>refresh().catch(e=>msg(e.message,true)));
 for(const b of document.querySelectorAll('[data-tab]'))b.addEventListener('click',()=>selectedTab(b.dataset.tab));
 for(const b of document.querySelectorAll('[data-status]'))b.addEventListener('click',()=>{statusFilter=b.dataset.status;renderQueue();});
 async function init(){try{const r=await api('/api/admin/me');csrf=r.csrf;showDashboard();await refresh();await loadSettings();}catch{showLogin()}}
 init();setInterval(async()=>{if(!csrf)return;try{await refresh()}catch{}},12000);
+
+function clearApiKey(){ $('api-key').value='';$('api-key-result').className='hidden space-top'; }
+function apiStatus(enabled){$('api-status').textContent=enabled?'API access is enabled.':'API access is disabled.';$('api-generate').textContent=enabled?'Replace API key':'Create API key';$('api-generate').dataset.enabled=String(enabled);$('api-revoke').classList.toggle('hidden',!enabled);}
+async function loadApiSettings(){try{const r=await api('/api/admin/automation');apiStatus(r.enabled);}catch(e){$('api-status').textContent='API setup unavailable: '+e.message;}}
+$('api-generate').addEventListener('click',async()=>{if($('api-generate').dataset.enabled==='true'&&!confirm('Replace your API key? Workflows using the old key will stop until you update them.'))return;$('api-generate').disabled=true;clearApiKey();try{const r=await api('/api/admin/automation','POST',{action:'rotate'});apiStatus(true);$('api-key').value=r.key;$('api-key-result').className='space-top';}catch(e){msg(e.message,true)}finally{$('api-generate').disabled=false}});
+$('api-revoke').addEventListener('click',async()=>{if(!confirm('Revoke API access? Connected workflows will stop working.'))return;$('api-revoke').disabled=true;try{await api('/api/admin/automation','POST',{action:'revoke'});clearApiKey();apiStatus(false);msg('API access revoked.');}catch(e){msg(e.message,true)}finally{$('api-revoke').disabled=false}});
+$('api-copy').addEventListener('click',async()=>{try{await navigator.clipboard.writeText($('api-key').value);msg('API key copied. Store it in your n8n credential.');}catch{$('api-key').select();msg('Select and copy the key manually.');}});
+$('api-hide').addEventListener('click',clearApiKey);
+
+function renderCustomLinks(links){const box=$('custom-link-fields');box.replaceChildren();for(let i=0;i<5;i++){const row=node('div','grid two');for(const [field,title,placeholder,max] of [['label','Button label',i===0?'Contact / Book me':'e.g. Follow on Instagram',40],['url','Link address','https://…',500]]){const wrap=node('div','field');const label=node('label','',title+' '+(i+1));label.htmlFor=`custom-${field}-${i}`;const input=node('input');input.id=label.htmlFor;input.maxLength=max;input.placeholder=placeholder;input.value=links[i]?.[field]||(i===0&&field==='label'?'Contact / Book me':'');wrap.append(label,input);row.append(wrap);}box.append(row);}}
+function readCustomLinks(){const result=[];for(let i=0;i<5;i++){const url=$(`custom-url-${i}`).value.trim();if(url)result.push({label:$(`custom-label-${i}`).value.trim(),url});}return result;}

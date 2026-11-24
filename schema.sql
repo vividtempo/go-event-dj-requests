@@ -48,3 +48,17 @@ CREATE TABLE IF NOT EXISTS settings (
  review_url VARCHAR(500) NOT NULL DEFAULT ''
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 INSERT IGNORE INTO settings (id,tip_url,review_url) VALUES (1,'','');
+
+-- Additive integration tables; also initialized by authenticated DJ settings.
+CREATE TABLE IF NOT EXISTS automation_settings (
+ id INT PRIMARY KEY, token_hash CHAR(64) NULL, created_at BIGINT UNSIGNED NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT IGNORE INTO automation_settings(id) VALUES(1);
+CREATE TABLE IF NOT EXISTS automation_event_links (
+ external_id VARCHAR(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin PRIMARY KEY,
+ event_id BIGINT UNSIGNED NOT NULL UNIQUE,
+ CONSTRAINT fk_automation_event FOREIGN KEY(event_id) REFERENCES events(id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS guest_links (
+ position INT PRIMARY KEY, label VARCHAR(40) NOT NULL, url VARCHAR(500) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
