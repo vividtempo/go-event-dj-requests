@@ -1,0 +1,13 @@
+# Local credentials and environment files
+/private/*
+!/private/config.example.php
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Archives, logs, and local metadata
+*.zip
+*.log
+.DS_Store
