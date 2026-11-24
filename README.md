@@ -56,6 +56,6 @@ This deliverable was syntax-checked with PHP CLI and source asset checks. It was
 
 ## Brand assets
 
-The guest page, DJ dashboard, and QR sign use the original SVG in `public_html/static/images/go-event-dj-logo.svg`. A white background preserves the navy and black artwork on the dark interface and printed sign. Each page uses `favicon-96x96.png` as its browser icon.
+Guest, DJ, and QR pages match the website's Montserrat typography, navy #010E3B, red #D8315B, and blue #1955BD. The original SVG remains the static fallback. CSS displays it and the supplied spinning Lottie logo in white without a background. Printed QR signs use the original dark SVG on white paper.
 
-The supplied `go-event-dj-logo.json` is a 10-second Lottie animation, retained as a brand asset for future use. The interface uses the static SVG and does not load an animation player.
+The self-hosted Lottie light SVG player v5.13.0 animates `go-event-dj-logo.json`; no CDN or external animation request is needed. Reduced-motion preferences use the static logo, and animation pauses in hidden tabs. Montserrat Latin variable font is self-hosted. Licenses accompany the player in `static/vendor/lottie-LICENSE.md` and font in `static/fonts/OFL.txt`. The browser icon is `favicon-96x96.png`.
