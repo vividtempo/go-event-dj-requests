@@ -53,3 +53,9 @@ The PHP application is designed for an Apache rewrite setup through `.htaccess`.
 ## Test limitations
 
 This deliverable was syntax-checked with PHP CLI and source asset checks. It was **not live-tested against your Cloudways database or runtime**, because server access and credentials were not provided. Test guest voting, DB permissions, rewrite rules, and authentication on the temporary URL before public launch. Review the QR service and back up your Cloudways database.
+
+## Brand assets
+
+The guest page, DJ dashboard, and QR sign use the original SVG in `public_html/static/images/go-event-dj-logo.svg`. A white background preserves the navy and black artwork on the dark interface and printed sign. Each page uses `favicon-96x96.png` as its browser icon.
+
+The supplied `go-event-dj-logo.json` is a 10-second Lottie animation, retained as a brand asset for future use. The interface uses the static SVG and does not load an animation player.
