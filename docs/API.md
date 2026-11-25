@@ -79,6 +79,8 @@ No n8n workflow is installed by this update. Date-based closing is not implement
 timestamp may fall on the next local day. Send zero for both timestamps to
 disable the window. The first authorized sync creates the schedule table.
 
+An optional `genres` list supplies up to 30 public genre labels, each up to 80 characters. An empty list clears the music vibe. Omitting it preserves the previous labels.
+
 An optional numeric `target_event_id` links an existing session without
 recreating it or moving its request history. If already linked, the stable
 external ID selects the same session. A stale revision or a link to another

@@ -9,10 +9,10 @@ const {loadNodeRuntime}=await import(pathToFileURL(resolve(runtime,'@php-wasm/no
 const php=new PHP(await loadNodeRuntime('8.3',{emscriptenOptions:{processId:7}}));
 const read=(p)=>readFileSync(new URL('../public_html/'+p,import.meta.url),'utf8');
 php.mkdir('/app');
-for(const f of ['schedule.php','automation.php'])php.writeFile('/app/'+f,read(f));
+for(const f of ['schedule.php','automation.php','catalog.php','request_queue.php'])php.writeFile('/app/'+f,read(f));
 php.writeFile('/app/guest_links.php','<?php function guest_links():array{return [];}');
 const mockDb="function db():PDO{static $db;if(!$db)$db=new PDO('sqlite:/app/fixture.db',null,null,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);return $db;}";
-const index=read('index.php').replace(/^function db\(\):PDO[^\n]+/m,mockDb).replace("function sql(string $q,array $args=[]):PDOStatement{","function sql(string $q,array $args=[]):PDOStatement{\$q=str_replace([' FOR UPDATE','INSERT IGNORE'],['','INSERT OR IGNORE'],\$q);");
+const index=read('index.php').replace(/^function db\(\):PDO[^\n]+/m,mockDb).replace("function sql(string $q,array $args=[]):PDOStatement{","function sql(string $q,array $args=[]):PDOStatement{\$q=str_replace([' FOR UPDATE','INSERT IGNORE','ON DUPLICATE KEY UPDATE last_seen=?','ON DUPLICATE KEY UPDATE direction=?'],['','INSERT OR IGNORE','ON CONFLICT(event_id,guest_key) DO UPDATE SET last_seen=?','ON CONFLICT(request_id,voter_key) DO UPDATE SET direction=? WHERE direction<>excluded.direction'],\$q);");
 // The production adapter uses InnoDB. Preseed its SQLite equivalent and bypass the equivalent DDL.
 const schedule=read('schedule.php').replace(/function request_schedule_schema\(\): void \{[\s\S]*?\n\}/,'function request_schedule_schema(): void {}');
 php.writeFile('/app/schedule.php',schedule);
@@ -28,13 +28,15 @@ CREATE TABLE automation_event_links(external_id TEXT PRIMARY KEY,event_id INTEGE
 CREATE TABLE planner_request_schedule(event_id INTEGER PRIMARY KEY,opens_at INTEGER DEFAULT 0,closes_at INTEGER DEFAULT 0,timezone TEXT,source_revision INTEGER,paused INTEGER DEFAULT 0);
 CREATE TABLE rate_events(id INTEGER PRIMARY KEY,actor_hash TEXT,action TEXT,created_at INTEGER);
 CREATE TABLE admin_sessions(token_hash TEXT,csrf_token TEXT,expires_at INTEGER);
-CREATE TABLE settings(id INTEGER,tip_url TEXT,review_url TEXT);
-CREATE TABLE requests(id INTEGER PRIMARY KEY,event_id INTEGER,title TEXT,artist TEXT,note TEXT,norm_title TEXT,norm_artist TEXT,created_at INTEGER,status TEXT DEFAULT 'pending');
-CREATE TABLE votes(request_id INTEGER,voter_key TEXT,created_at INTEGER,PRIMARY KEY(request_id,voter_key));");
+CREATE TABLE settings(id INTEGER,tip_url TEXT,review_url TEXT,booking_url TEXT,contact_url TEXT);
+CREATE TABLE requests(id INTEGER PRIMARY KEY,event_id INTEGER,title TEXT,artist TEXT,note TEXT,norm_title TEXT,norm_artist TEXT,created_at INTEGER,status TEXT DEFAULT 'pending',requester_name TEXT,artwork_url TEXT,store_url TEXT);
+CREATE TABLE votes(request_id INTEGER,voter_key TEXT,created_at INTEGER,direction INTEGER DEFAULT 1,PRIMARY KEY(request_id,voter_key));
+CREATE TABLE guest_presence(event_id INTEGER,guest_key TEXT,last_seen INTEGER,PRIMARY KEY(event_id,guest_key));");
 $db->prepare("INSERT INTO automation_settings VALUES(1,?)")->execute([hash('sha256','${key}')]);
 $db->prepare("INSERT INTO admin_sessions VALUES(?,'fixture-csrf',?)")->execute([hash('sha256','${dj}'),time()+600]);
-$db->exec("INSERT INTO events VALUES(7,'Legacy queue','2027-12-30','Hall',1,0,0,0);
-INSERT INTO requests VALUES(40,7,'Old Song','An Artist','','old song','an artist',1,'pending');");
+$db->exec("ALTER TABLE events ADD COLUMN genres TEXT;
+INSERT INTO events(id,name,event_date,venue,created_at,is_active,requests_open,archived) VALUES(7,'Legacy queue','2027-12-30','Hall',1,0,0,0);
+INSERT INTO requests(id,event_id,title,artist,note,norm_title,norm_artist,created_at,status) VALUES(40,7,'Old Song','An Artist','','old song','an artist',1,'pending');");
 mkdir('/private');file_put_contents('/private/config.php','<?php return '.var_export(['base_url'=>'https://requests.goeventdj.com','app_secret'=>str_repeat('s',32),'admin_password_hash'=>password_hash('test-only',PASSWORD_DEFAULT)],true).';');`});
 assert.equal(setup.errors,'');
 async function req(url,method='GET',data,headers={}) {
@@ -47,7 +49,7 @@ async function req(url,method='GET',data,headers={}) {
 }
 try {
 const base='/api/v1/events/planner-sync', now=Math.floor(Date.now()/1000);
-const details={external_id:'planner:'+'1'.repeat(32),name:'Planner party',date:'2027-12-31',venue:'Hall',timezone:'America/Chicago',opens_at:now+3600,closes_at:now+7200,source_revision:1,target_event_id:7};
+const details={external_id:'planner:'+'1'.repeat(32),name:'Planner party',date:'2027-12-31',venue:'Hall',timezone:'America/Chicago',opens_at:now+3600,closes_at:now+7200,source_revision:1,target_event_id:7,genres:['Dance / Electronic','House Music']};
 const sync=async data=>req(base,'POST',data,{'X-API-Key':key});
 assert.equal((await req(base,'POST',details)).status,401);
 assert.equal((await req('/api/admin/events/7/action','POST',{action:'activate'})).status,200);
@@ -71,7 +73,7 @@ assert.equal((await req('/api/board')).data.state,'none');
 assert.equal((await req('/api/admin/events/7/action','POST',{action:'activate'})).status,409);
 const live={...details,source_revision:2,opens_at:now-120,closes_at:now+120};
 assert.equal((await sync(live)).data.event.id,7);
-assert.equal((await req('/api/board')).data.event.id,7);
+assert.deepEqual((await req('/api/board')).data.event.genres,live.genres);
 assert.equal((await req('/api/requests','POST',{event_id:8,title:'Wrong',artist:'Artist'})).status,409);
 assert.equal((await req('/api/requests','POST',{event_id:7,title:'New Song',artist:'Artist'})).status,200);
 assert.equal((await req('/api/admin/events/7/action','POST',{action:'close'})).status,200);
@@ -96,5 +98,22 @@ assert.equal((await req('/api/board')).data.event.id,next.data.event.id);
 assert.equal((await sync({...second,source_revision:3,opens_at:0,closes_at:0})).status,200);
 assert.equal((await req('/api/board')).data.state,'none');
 assert.equal((await req('/api/admin/events/7/requests')).data.requests.length,2);
+await req('/api/admin/events/7/action','POST',{action:'auto'});
+await sync({...live,source_revision:5});
+const guestHeaders={Cookie:'dj_guest_id='+'c'.repeat(64)};
+const vote=direction=>req('/api/requests/40/vote','POST',{direction},guestHeaders);
+assert.equal((await vote(1)).data.my_vote,1);
+assert.equal((await vote(-1)).data.my_vote,-1);
+assert.equal((await vote(-1)).data.voted,false);
+assert.equal((await req('/api/board','GET',undefined,guestHeaders)).data.requests.find(s=>s.id===40).votes,-1);
+for(const state of ['accepted','played','declined']) {
+    await req('/api/admin/requests/40/status','POST',{status:state});
+    const publicSong=(await req('/api/board')).data.requests.find(s=>s.id===40);
+    if(state==='declined') assert.equal(publicSong,undefined);
+    else { assert.equal(publicSong.status,state);assert.ok(!('note' in publicSong)&&!('requester_name' in publicSong)); }
+}
+assert.equal((await vote(1)).status,404);
+assert.deepEqual((await req('/api/requests','POST',{title:'Old Song',artist:'An Artist',event_id:7})).data,{ok:true});
+assert.equal((await req('/api/admin/events/7/requests')).data.requests.find(s=>s.id===40).status,'declined');
 console.log('Requests schedule tests passed (SQLite adapter, production MySQL SQL requires deployment smoke test).');
 } finally { php.exit(); }

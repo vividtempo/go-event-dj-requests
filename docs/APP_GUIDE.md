@@ -23,9 +23,15 @@ The guest page and DJ queue refresh every 12 seconds. **Activate** selects the e
 
 Original tables: events, requests, votes, rate_events, admin_sessions, settings. Added tables: automation_settings (hashed key), automation_event_links (stable external booking IDs), guest_links (ordered button labels and destinations).
 
+## Guest requests and DJ moderation
+
+The guest form searches the US iTunes catalog by song or artist. Guests can also enter the title and artist manually. Catalog results pair cover art with a linked iTunes Store badge. The server verifies selected track metadata. Search requires the PHP cURL extension and outbound HTTPS to itunes.apple.com. An unavailable catalog leaves manual entry available.
+
+The DJ can accept, mark played, decline, or restore a request. Guests see pending, accepted, and played songs ranked by net votes within each group. Guests can vote in either direction on pending or accepted songs while requests are open. Only the DJ sees requester names, dedications, and declined songs. Active guests counts distinct browser cookies seen on the current event in the last minute. The permanent QR opens the same guest page for every event.
+
 ## Guest links
 
-DJ Settings provides tip/review URLs plus up to five additional labeled buttons for contact, booking, social pages, email, or telephone. HTTPS links are accepted; extra buttons also accept plain `mailto:address@example.com` and `tel:+15551234567`. Blank URL fields are omitted. Links appear both while requests are open and while closed; the entire section hides when all links are empty.
+DJ Settings provides optional booking, contact (Popl), review, and tip URLs plus up to five additional labeled buttons for contact, booking, social pages, email, or telephone. HTTPS links are accepted; extra buttons also accept plain `mailto:address@example.com` and `tel:+15551234567`. Blank URL fields are omitted. Links appear both while requests are open and while closed; the entire section hides when all links are empty.
 
 ## Deployment
 

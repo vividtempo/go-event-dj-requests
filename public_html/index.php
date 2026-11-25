@@ -4,7 +4,7 @@ ini_set('display_errors','0');
 header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: DENY');
 header('Referrer-Policy: strict-origin-when-cross-origin');
-header("Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https://api.qrserver.com; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'");
+header("Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https://api.qrserver.com https://*.mzstatic.com; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'");
 $path=parse_url($_SERVER['REQUEST_URI']??'/',PHP_URL_PATH)?:'/'; $method=$_SERVER['REQUEST_METHOD']??'GET';
 if(str_starts_with($path,'/api/')) header('Cache-Control: no-store');
 function err(int $code,string $msg):never{http_response_code($code);header('Content-Type: application/json');echo json_encode(['detail'=>$msg]);exit;}
@@ -13,7 +13,7 @@ function conf():array{static $c;if($c===null){$p=dirname(__DIR__).'/private/conf
 function db():PDO{static $db;if(!$db){$c=conf();$db=new PDO("mysql:host={$c['db_host']};port=".($c['db_port']??3306).";dbname={$c['db_name']};charset=utf8mb4",$c['db_user'],$c['db_password'],[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC,PDO::ATTR_EMULATE_PREPARES=>false]);}return $db;}
 function sql(string $q,array $args=[]):PDOStatement{$s=db()->prepare($q);$s->execute($args);return $s;}
 function tx(callable $f):mixed{$d=db();$d->beginTransaction();try{$v=$f();$d->commit();return $v;}catch(Throwable $e){if($d->inTransaction())$d->rollBack();throw $e;}}
-function input():array{$raw=file_get_contents('php://input');if(strlen($raw)>4096)err(413,'Request too large.');$v=json_decode($raw?:'{}',true);if(!is_array($v))err(400,'Invalid JSON.');return $v;}
+function input():array{$raw=file_get_contents('php://input');if(strlen($raw)>8192)err(413,'Request too large.');$v=json_decode($raw?:'{}',true);if(!is_array($v))err(400,'Invalid JSON.');return $v;}
 function clean(mixed $v,int $max,bool $required=true):string{if(!is_string($v))err(400,'Invalid input.');$v=trim(preg_replace('/\s+/u',' ',$v)??'');if(($required&&$v==='')||preg_match('/[\x00-\x1F\x7F]/u',$v)||(function_exists('mb_strlen')?mb_strlen($v)>$max:strlen($v)>$max))err(400,'Invalid text length.');return $v;}
 function norm(string $v):string{$v=function_exists('mb_strtolower')?mb_strtolower($v,'UTF-8'):strtolower($v);if(class_exists('Normalizer'))$v=Normalizer::normalize($v,Normalizer::FORM_KC)?:$v;return trim(preg_replace('/\s+/u',' ',$v)??$v);}
 function https():bool{return isset($_SERVER['HTTPS'])&&$_SERVER['HTTPS']!=='off';}
@@ -22,17 +22,19 @@ function iphash():string{return hash_hmac('sha256',$_SERVER['REMOTE_ADDR']??'unk
 function rate(string $who,string $action,int $limit,int $window):void{if((int)sql('SELECT COUNT(*) FROM rate_events WHERE actor_hash=? AND action=? AND created_at>=?',[$who,$action,time()-$window])->fetchColumn()>=$limit)err(429,'Too many actions. Try again later.');sql('INSERT INTO rate_events(actor_hash,action,created_at) VALUES(?,?,?)',[$who,$action,time()]);}
 function active():?array{$now=time();return choose_request_event(request_schedule_rows(false,$now),$now)['event'];}
 function admin(bool $write=false):string{$token=$_COOKIE['dj_admin']??'';if(!is_string($token)||!preg_match('/^[a-f0-9]{64}$/',$token))err(401,'Sign in as DJ.');$r=sql('SELECT csrf_token,expires_at FROM admin_sessions WHERE token_hash=?',[hash('sha256',$token)])->fetch();if(!$r||$r['expires_at']<=time())err(401,'Session expired.');if($write&&!hash_equals($r['csrf_token'],$_SERVER['HTTP_X_CSRF_TOKEN']??''))err(403,'Invalid security token.');return $r['csrf_token'];}
-function links():array{$links=sql('SELECT tip_url,review_url FROM settings WHERE id=1')->fetch()?:['tip_url'=>'','review_url'=>''];$links['custom_links']=guest_links();return $links;}
+function links():array{$links=sql('SELECT booking_url,contact_url,tip_url,review_url FROM settings WHERE id=1')->fetch()?:['tip_url'=>'','review_url'=>''];$links['custom_links']=guest_links();return $links;}
 function safeurl(mixed $v):string{if(!is_string($v)||strlen($v)>500)err(400,'Invalid link.');$v=trim($v);if($v==='')return ''; $p=parse_url($v);if(!$p||($p['scheme']??'')!=='https'||empty($p['host'])||isset($p['user'])||isset($p['pass']))err(400,'Use an HTTPS link.');return $v;}
 try{
 require __DIR__.'/guest_links.php';
 require __DIR__.'/schedule.php';
 require __DIR__.'/automation.php';
+require __DIR__.'/catalog.php';
+require __DIR__.'/request_queue.php';
 if($path==='/'&&$method==='GET'){header('Location: /requests',true,307);exit;}
 if($method==='GET'&&in_array($path,['/requests','/admin','/qr'],true)){if($path==='/qr')admin();$file=['/requests'=>'guest.html','/admin'=>'admin.html','/qr'=>'qr.html'][$path];header('Content-Type: text/html; charset=utf-8');readfile(__DIR__.'/static/'.$file);exit;}
-if($path==='/api/board'&&$method==='GET'){$v=guest();$e=active();$l=links();if(!$e)out(['state'=>'none','links'=>$l]);if(!$e['requests_open'])out(['state'=>'closed','event'=>['id'=>(int)$e['id'],'name'=>$e['name']],'links'=>$l]);$r=sql("SELECT r.id,r.title,r.artist,r.status,r.created_at,COUNT(v.voter_key) AS votes,MAX(CASE WHEN v.voter_key=? THEN 1 ELSE 0 END) AS voted FROM requests r LEFT JOIN votes v ON v.request_id=r.id WHERE r.event_id=? AND r.status='pending' GROUP BY r.id ORDER BY votes DESC,r.created_at DESC LIMIT 200",[$v,$e['id']])->fetchAll();foreach($r as &$x){$x['id']=(int)$x['id'];$x['votes']=(int)$x['votes'];$x['voted']=(bool)$x['voted'];}unset($x);out(['state'=>'open','event'=>['id'=>(int)$e['id'],'name'=>$e['name']],'links'=>$l,'requests'=>$r]);}
-if($path==='/api/requests'&&$method==='POST'){$d=input();$v=guest();if(!empty($d['website']))out(['ok'=>true]);$title=clean($d['title']??null,120);$artist=clean($d['artist']??null,120);$note=clean($d['note']??'',240,false);$expected=$d['event_id']??null;$result=tx(function()use($v,$title,$artist,$note,$expected){rate($v,'submit',6,600);rate(iphash(),'ip_submit',400,600);$e=active();if(!$e||!$e['requests_open'])err(409,'Requests are currently closed.');if(($expected!==null&&$expected!==(int)$e['id'])||($expected===null&&isset($e['opens_at'])))err(409,'The event has changed. Refresh and try again.');$r=sql('SELECT id,status FROM requests WHERE event_id=? AND norm_title=? AND norm_artist=?',[$e['id'],norm($title),norm($artist)])->fetch();if($r){if($r['status']!=='pending')return ['ok'=>true,'duplicate'=>true,'status'=>$r['status'],'voted'=>false];$i=sql('INSERT IGNORE INTO votes(request_id,voter_key,created_at) VALUES(?,?,?)',[$r['id'],$v,time()]);return ['ok'=>true,'duplicate'=>true,'status'=>'pending','voted'=>$i->rowCount()>0];}if((int)sql('SELECT COUNT(*) FROM requests WHERE event_id=?',[$e['id']])->fetchColumn()>=500)err(409,'Request list is full.');sql('INSERT INTO requests(event_id,title,artist,note,norm_title,norm_artist,created_at) VALUES(?,?,?,?,?,?,?)',[$e['id'],$title,$artist,$note,norm($title),norm($artist),time()]);$id=(int)db()->lastInsertId();sql('INSERT INTO votes(request_id,voter_key,created_at) VALUES(?,?,?)',[$id,$v,time()]);return ['ok'=>true,'duplicate'=>false,'request_id'=>$id];});out($result);}
-if($method==='POST'&&preg_match('#^/api/requests/(\d+)/vote$#',$path,$m)){$v=guest();$id=(int)$m[1];$r=tx(function()use($v,$id){rate($v,'vote',30,600);rate(iphash(),'ip_vote',1000,600);$e=active();if(!$e||!$e['requests_open'])err(409,'Requests are closed.');if(!sql("SELECT id FROM requests WHERE id=? AND event_id=? AND status='pending'",[$id,$e['id']])->fetch())err(404,'Song unavailable.');$i=sql('INSERT IGNORE INTO votes(request_id,voter_key,created_at) VALUES(?,?,?)',[$id,$v,time()]);return ['ok'=>true,'voted'=>$i->rowCount()>0];});out($r);}
+if ($path==='/api/board' && $method==='GET') out(request_board());
+if ($path==='/api/requests' && $method==='POST') out(submit_request(input()));
+if ($method==='POST' && preg_match('#^/api/requests/(\d+)/vote$#',$path,$m)) out(record_vote((int)$m[1],input()));
 if($path==='/api/admin/login'&&$method==='POST'){$d=input();$pass=$d['password']??null;if(!is_string($pass)||strlen($pass)>256)err(400,'Invalid password.');tx(fn()=>rate(iphash(),'login',8,900));if(!password_verify($pass,conf()['admin_password_hash']))err(401,'Incorrect password.');$token=bin2hex(random_bytes(32));$csrf=bin2hex(random_bytes(32));sql('INSERT INTO admin_sessions(token_hash,csrf_token,expires_at) VALUES(?,?,?)',[hash('sha256',$token),$csrf,time()+28800]);setcookie('dj_admin',$token,['expires'=>time()+28800,'path'=>'/','secure'=>https(),'httponly'=>true,'samesite'=>'Strict']);out(['ok'=>true,'csrf'=>$csrf]);}
 if($path==='/api/admin/me'&&$method==='GET')out(['authenticated'=>true,'csrf'=>admin()]);
 if($path==='/api/admin/logout'&&$method==='POST'){admin(true);sql('DELETE FROM admin_sessions WHERE token_hash=?',[hash('sha256',$_COOKIE['dj_admin'])]);setcookie('dj_admin','',['expires'=>1,'path'=>'/','secure'=>https(),'httponly'=>true,'samesite'=>'Strict']);out(['ok'=>true]);}
@@ -81,10 +83,24 @@ if($method==='POST'&&preg_match('#^/api/admin/events/(\d+)/action$#',$path,$m)){
         }
     });out(['ok'=>true]);
 }
-if($method==='GET'&&preg_match('#^/api/admin/events/(\d+)/requests$#',$path,$m)){admin();$id=(int)$m[1];if(!sql('SELECT id FROM events WHERE id=?',[$id])->fetch())err(404,'Event not found.');$r=sql('SELECT r.id,r.event_id,r.title,r.artist,r.note,r.status,r.created_at,COUNT(v.voter_key) AS votes FROM requests r LEFT JOIN votes v ON v.request_id=r.id WHERE r.event_id=? GROUP BY r.id ORDER BY votes DESC,r.created_at DESC',[$id])->fetchAll();foreach($r as &$x){foreach(['id','event_id','created_at','votes'] as $k)$x[$k]=(int)$x[$k];}unset($x);out(['requests'=>$r]);}
-if($method==='POST'&&preg_match('#^/api/admin/requests/(\d+)/status$#',$path,$m)){admin(true);$d=input();$status=$d['status']??'';if(!in_array($status,['pending','played','skipped'],true))err(400,'Invalid status.');sql('UPDATE requests SET status=? WHERE id=?',[$status,(int)$m[1]]);out(['ok'=>true]);}
+if ($method==='GET' && preg_match('#^/api/admin/events/(\d+)/requests$#',$path,$m)) {
+    admin();
+    $id=(int)$m[1];
+    if (!sql('SELECT id FROM events WHERE id=?',[$id])->fetch()) err(404,'Event not found.');
+    out(['requests'=>queue_rows($id),'active_guests'=>count_active_guests($id)]);
+}
+if ($method==='POST' && preg_match('#^/api/admin/requests/(\d+)/status$#',$path,$m)) {
+    admin(true);
+    $status=input()['status']??'';
+    if ($status==='skipped') $status='declined';
+    if (!in_array($status,['pending','accepted','played','declined'],true)) err(400,'Invalid status.');
+    sql('UPDATE requests SET status=? WHERE id=?',[$status,(int)$m[1]]);
+    out(['ok'=>true]);
+}
 if($path==='/api/admin/settings'&&$method==='GET'){admin();guest_links_schema();out(links());}
-if($path==='/api/admin/settings'&&$method==='POST'){admin(true);$d=input();$tip=safeurl($d['tip_url']??'');$review=safeurl($d['review_url']??'');$custom=array_key_exists('custom_links',$d)?validate_guest_links($d['custom_links']):null;guest_links_schema();tx(function()use($tip,$review,$custom){sql('UPDATE settings SET tip_url=?,review_url=? WHERE id=1',[$tip,$review]);if($custom!==null){sql('DELETE FROM guest_links');foreach($custom as $i=>$link)sql('INSERT INTO guest_links(position,label,url) VALUES(?,?,?)',[$i,$link['label'],$link['url']]);}});out(['ok'=>true]);}
+if($path==='/api/admin/settings'&&$method==='POST'){admin(true);$d=input();$tip=safeurl($d['tip_url']??'');$review=safeurl($d['review_url']??'');$booking=array_key_exists('booking_url',$d)?safeurl($d['booking_url']):null;
+    $contact=array_key_exists('contact_url',$d)?safeurl($d['contact_url']):null;
+    $custom=array_key_exists('custom_links',$d)?validate_guest_links($d['custom_links']):null;guest_links_schema();tx(function()use($tip,$review,$custom,$booking,$contact){sql('UPDATE settings SET tip_url=?,review_url=?,booking_url=COALESCE(?,booking_url),contact_url=COALESCE(?,contact_url) WHERE id=1',[$tip,$review,$booking,$contact]);if($custom!==null){sql('DELETE FROM guest_links');foreach($custom as $i=>$link)sql('INSERT INTO guest_links(position,label,url) VALUES(?,?,?)',[$i,$link['label'],$link['url']]);}});out(['ok'=>true]);}
 if(($path==='/api/admin/qr-link'||$path==='/api/admin/qr.png')&&$method==='GET'){admin();$base=rtrim(conf()['base_url']??'','/');if(!$base)$base=(https()?'https':'http').'://'.($_SERVER['HTTP_HOST']??'localhost');$url=$base.'/requests';if($path==='/api/admin/qr.png'){header('Location: https://api.qrserver.com/v1/create-qr-code/?size=400x400&data='.rawurlencode($url),true,302);exit;}out(['url'=>$url,'is_configured'=>!empty(conf()['base_url'])]);}
 err(404,'Not found.');
 }catch(Throwable $e){error_log('Go Event DJ app error: '.$e->getMessage());err(503,'Application or database unavailable.');}

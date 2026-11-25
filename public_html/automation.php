@@ -46,6 +46,7 @@ function automation_event(int $id): array {
     }
     foreach (['id', 'created_at'] as $key) $event[$key] = (int)$event[$key];
     foreach (['is_active', 'requests_open', 'archived'] as $key) $event[$key] = (bool)$event[$key];
+    $event['genres']=json_decode($event['genres']??'[]',true)?:[];
     $event['date'] = $event['event_date'];
     unset($event['event_date']);
     return $event;
@@ -91,15 +92,26 @@ if (str_starts_with($path, '/api/v1/')) {
         $target=$data['target_event_id']??null;
         if ($target!==null&&(!is_int($target)||$target<1)) err(400,'Invalid existing request event ID.');
         $window=validate_planner_schedule($data);
+        $genres=null;
+        if (array_key_exists('genres',$data)) {
+            if (!is_array($data['genres']) || !array_is_list($data['genres']) || count($data['genres'])>30) err(400,'Send up to 30 genre labels.');
+            $genres=array_values(array_unique(array_map(fn($genre)=>clean($genre,80),$data['genres'])));
+            unset($data['genres']);
+        }
         unset($data['target_event_id'],$data['opens_at'],$data['closes_at'],$data['timezone'],$data['source_revision']);
         $fields=automation_fields($data,true);
         if (($fields['event_date']??'')===''&&$window[0]!==0) err(400,'Event date is required.');
         $fields+=['event_date'=>'','venue'=>''];
         request_schedule_schema();
-        $result=tx(function() use ($external,$target,$fields,$window,$key) {
+        $result=tx(function() use ($external,$target,$fields,$window,$key,$genres) {
             $stored=sql('SELECT token_hash FROM automation_settings WHERE id=1 FOR UPDATE')->fetchColumn();
             if (!$stored||!hash_equals($stored,hash('sha256',$key))) err(401,'Invalid or revoked API key.');
-            return upsert_planner_schedule($external,$target,$fields,$window);
+            $result=upsert_planner_schedule($external,$target,$fields,$window);
+            if ($genres!==null && $result['event']!==null) {
+                sql('UPDATE events SET genres=? WHERE id=?',[json_encode($genres,JSON_THROW_ON_ERROR),$result['event']['id']]);
+                $result['event']['genres']=$genres;
+            }
+            return $result;
         });
         http_response_code($result['created']?201:200);
         out($result);
