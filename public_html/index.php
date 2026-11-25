@@ -20,24 +20,67 @@ function https():bool{return isset($_SERVER['HTTPS'])&&$_SERVER['HTTPS']!=='off'
 function guest():string{$v=$_COOKIE['dj_guest_id']??'';if(!is_string($v)||!preg_match('/^[a-f0-9]{64}$/',$v)){$v=bin2hex(random_bytes(32));setcookie('dj_guest_id',$v,['expires'=>time()+31536000,'path'=>'/','secure'=>https(),'httponly'=>true,'samesite'=>'Lax']);}return hash('sha256','guest:'.$v);}
 function iphash():string{return hash_hmac('sha256',$_SERVER['REMOTE_ADDR']??'unknown',conf()['app_secret']);}
 function rate(string $who,string $action,int $limit,int $window):void{if((int)sql('SELECT COUNT(*) FROM rate_events WHERE actor_hash=? AND action=? AND created_at>=?',[$who,$action,time()-$window])->fetchColumn()>=$limit)err(429,'Too many actions. Try again later.');sql('INSERT INTO rate_events(actor_hash,action,created_at) VALUES(?,?,?)',[$who,$action,time()]);}
-function active():?array{return sql('SELECT * FROM events WHERE is_active=1 AND archived=0 LIMIT 1')->fetch()?:null;}
+function active():?array{$now=time();return choose_request_event(request_schedule_rows(false,$now),$now)['event'];}
 function admin(bool $write=false):string{$token=$_COOKIE['dj_admin']??'';if(!is_string($token)||!preg_match('/^[a-f0-9]{64}$/',$token))err(401,'Sign in as DJ.');$r=sql('SELECT csrf_token,expires_at FROM admin_sessions WHERE token_hash=?',[hash('sha256',$token)])->fetch();if(!$r||$r['expires_at']<=time())err(401,'Session expired.');if($write&&!hash_equals($r['csrf_token'],$_SERVER['HTTP_X_CSRF_TOKEN']??''))err(403,'Invalid security token.');return $r['csrf_token'];}
 function links():array{$links=sql('SELECT tip_url,review_url FROM settings WHERE id=1')->fetch()?:['tip_url'=>'','review_url'=>''];$links['custom_links']=guest_links();return $links;}
 function safeurl(mixed $v):string{if(!is_string($v)||strlen($v)>500)err(400,'Invalid link.');$v=trim($v);if($v==='')return ''; $p=parse_url($v);if(!$p||($p['scheme']??'')!=='https'||empty($p['host'])||isset($p['user'])||isset($p['pass']))err(400,'Use an HTTPS link.');return $v;}
 try{
 require __DIR__.'/guest_links.php';
+require __DIR__.'/schedule.php';
 require __DIR__.'/automation.php';
 if($path==='/'&&$method==='GET'){header('Location: /requests',true,307);exit;}
 if($method==='GET'&&in_array($path,['/requests','/admin','/qr'],true)){if($path==='/qr')admin();$file=['/requests'=>'guest.html','/admin'=>'admin.html','/qr'=>'qr.html'][$path];header('Content-Type: text/html; charset=utf-8');readfile(__DIR__.'/static/'.$file);exit;}
-if($path==='/api/board'&&$method==='GET'){$v=guest();$e=active();$l=links();if(!$e)out(['state'=>'none','links'=>$l]);if(!$e['requests_open'])out(['state'=>'closed','event'=>['name'=>$e['name']],'links'=>$l]);$r=sql("SELECT r.id,r.title,r.artist,r.status,r.created_at,COUNT(v.voter_key) AS votes,MAX(CASE WHEN v.voter_key=? THEN 1 ELSE 0 END) AS voted FROM requests r LEFT JOIN votes v ON v.request_id=r.id WHERE r.event_id=? AND r.status='pending' GROUP BY r.id ORDER BY votes DESC,r.created_at DESC LIMIT 200",[$v,$e['id']])->fetchAll();foreach($r as &$x){$x['id']=(int)$x['id'];$x['votes']=(int)$x['votes'];$x['voted']=(bool)$x['voted'];}unset($x);out(['state'=>'open','event'=>['name'=>$e['name']],'links'=>$l,'requests'=>$r]);}
-if($path==='/api/requests'&&$method==='POST'){$d=input();$v=guest();if(!empty($d['website']))out(['ok'=>true]);$title=clean($d['title']??null,120);$artist=clean($d['artist']??null,120);$note=clean($d['note']??'',240,false);$result=tx(function()use($v,$title,$artist,$note){rate($v,'submit',6,600);rate(iphash(),'ip_submit',400,600);$e=active();if(!$e||!$e['requests_open'])err(409,'Requests are currently closed.');$r=sql('SELECT id,status FROM requests WHERE event_id=? AND norm_title=? AND norm_artist=?',[$e['id'],norm($title),norm($artist)])->fetch();if($r){if($r['status']!=='pending')return ['ok'=>true,'duplicate'=>true,'status'=>$r['status'],'voted'=>false];$i=sql('INSERT IGNORE INTO votes(request_id,voter_key,created_at) VALUES(?,?,?)',[$r['id'],$v,time()]);return ['ok'=>true,'duplicate'=>true,'status'=>'pending','voted'=>$i->rowCount()>0];}if((int)sql('SELECT COUNT(*) FROM requests WHERE event_id=?',[$e['id']])->fetchColumn()>=500)err(409,'Request list is full.');sql('INSERT INTO requests(event_id,title,artist,note,norm_title,norm_artist,created_at) VALUES(?,?,?,?,?,?,?)',[$e['id'],$title,$artist,$note,norm($title),norm($artist),time()]);$id=(int)db()->lastInsertId();sql('INSERT INTO votes(request_id,voter_key,created_at) VALUES(?,?,?)',[$id,$v,time()]);return ['ok'=>true,'duplicate'=>false,'request_id'=>$id];});out($result);}
+if($path==='/api/board'&&$method==='GET'){$v=guest();$e=active();$l=links();if(!$e)out(['state'=>'none','links'=>$l]);if(!$e['requests_open'])out(['state'=>'closed','event'=>['id'=>(int)$e['id'],'name'=>$e['name']],'links'=>$l]);$r=sql("SELECT r.id,r.title,r.artist,r.status,r.created_at,COUNT(v.voter_key) AS votes,MAX(CASE WHEN v.voter_key=? THEN 1 ELSE 0 END) AS voted FROM requests r LEFT JOIN votes v ON v.request_id=r.id WHERE r.event_id=? AND r.status='pending' GROUP BY r.id ORDER BY votes DESC,r.created_at DESC LIMIT 200",[$v,$e['id']])->fetchAll();foreach($r as &$x){$x['id']=(int)$x['id'];$x['votes']=(int)$x['votes'];$x['voted']=(bool)$x['voted'];}unset($x);out(['state'=>'open','event'=>['id'=>(int)$e['id'],'name'=>$e['name']],'links'=>$l,'requests'=>$r]);}
+if($path==='/api/requests'&&$method==='POST'){$d=input();$v=guest();if(!empty($d['website']))out(['ok'=>true]);$title=clean($d['title']??null,120);$artist=clean($d['artist']??null,120);$note=clean($d['note']??'',240,false);$expected=$d['event_id']??null;$result=tx(function()use($v,$title,$artist,$note,$expected){rate($v,'submit',6,600);rate(iphash(),'ip_submit',400,600);$e=active();if(!$e||!$e['requests_open'])err(409,'Requests are currently closed.');if(($expected!==null&&$expected!==(int)$e['id'])||($expected===null&&isset($e['opens_at'])))err(409,'The event has changed. Refresh and try again.');$r=sql('SELECT id,status FROM requests WHERE event_id=? AND norm_title=? AND norm_artist=?',[$e['id'],norm($title),norm($artist)])->fetch();if($r){if($r['status']!=='pending')return ['ok'=>true,'duplicate'=>true,'status'=>$r['status'],'voted'=>false];$i=sql('INSERT IGNORE INTO votes(request_id,voter_key,created_at) VALUES(?,?,?)',[$r['id'],$v,time()]);return ['ok'=>true,'duplicate'=>true,'status'=>'pending','voted'=>$i->rowCount()>0];}if((int)sql('SELECT COUNT(*) FROM requests WHERE event_id=?',[$e['id']])->fetchColumn()>=500)err(409,'Request list is full.');sql('INSERT INTO requests(event_id,title,artist,note,norm_title,norm_artist,created_at) VALUES(?,?,?,?,?,?,?)',[$e['id'],$title,$artist,$note,norm($title),norm($artist),time()]);$id=(int)db()->lastInsertId();sql('INSERT INTO votes(request_id,voter_key,created_at) VALUES(?,?,?)',[$id,$v,time()]);return ['ok'=>true,'duplicate'=>false,'request_id'=>$id];});out($result);}
 if($method==='POST'&&preg_match('#^/api/requests/(\d+)/vote$#',$path,$m)){$v=guest();$id=(int)$m[1];$r=tx(function()use($v,$id){rate($v,'vote',30,600);rate(iphash(),'ip_vote',1000,600);$e=active();if(!$e||!$e['requests_open'])err(409,'Requests are closed.');if(!sql("SELECT id FROM requests WHERE id=? AND event_id=? AND status='pending'",[$id,$e['id']])->fetch())err(404,'Song unavailable.');$i=sql('INSERT IGNORE INTO votes(request_id,voter_key,created_at) VALUES(?,?,?)',[$id,$v,time()]);return ['ok'=>true,'voted'=>$i->rowCount()>0];});out($r);}
 if($path==='/api/admin/login'&&$method==='POST'){$d=input();$pass=$d['password']??null;if(!is_string($pass)||strlen($pass)>256)err(400,'Invalid password.');tx(fn()=>rate(iphash(),'login',8,900));if(!password_verify($pass,conf()['admin_password_hash']))err(401,'Incorrect password.');$token=bin2hex(random_bytes(32));$csrf=bin2hex(random_bytes(32));sql('INSERT INTO admin_sessions(token_hash,csrf_token,expires_at) VALUES(?,?,?)',[hash('sha256',$token),$csrf,time()+28800]);setcookie('dj_admin',$token,['expires'=>time()+28800,'path'=>'/','secure'=>https(),'httponly'=>true,'samesite'=>'Strict']);out(['ok'=>true,'csrf'=>$csrf]);}
 if($path==='/api/admin/me'&&$method==='GET')out(['authenticated'=>true,'csrf'=>admin()]);
 if($path==='/api/admin/logout'&&$method==='POST'){admin(true);sql('DELETE FROM admin_sessions WHERE token_hash=?',[hash('sha256',$_COOKIE['dj_admin'])]);setcookie('dj_admin','',['expires'=>1,'path'=>'/','secure'=>https(),'httponly'=>true,'samesite'=>'Strict']);out(['ok'=>true]);}
-if($path==='/api/admin/events'&&$method==='GET'){admin();$r=sql('SELECT * FROM events ORDER BY created_at DESC,id DESC')->fetchAll();foreach($r as &$e){foreach(['id','created_at','is_active','requests_open','archived'] as $k)$e[$k]=(int)$e[$k];}unset($e);out(['events'=>$r]);}
+if($path==='/api/admin/events'&&$method==='GET'){
+    admin();$now=time();$r=request_schedule_rows(true);$live=choose_request_event($r,$now);
+    foreach($r as &$e){
+        foreach(['id','created_at','archived'] as $k)$e[$k]=(int)$e[$k];
+        $e['scheduled']=isset($e['opens_at']);
+        $e['in_window']=$e['scheduled']&&scheduled_window($e,$now);
+        $e['is_active']=(int)($live['event']&&(int)$live['event']['id']===$e['id']);
+        $e['requests_open']=$e['is_active']?(int)$live['event']['requests_open']:0;
+    }
+    unset($e);out(['events'=>$r,'schedule_conflict'=>$live['conflict']]);
+}
 if($path==='/api/admin/events'&&$method==='POST'){admin(true);$d=input();$name=clean($d['name']??null,120);$date=$d['date']??'';$venue=clean($d['venue']??'',160,false);if(!is_string($date)||($date!==''&&!preg_match('/^\d{4}-\d{2}-\d{2}$/',$date)))err(400,'Invalid date.');sql('INSERT INTO events(name,event_date,venue,created_at) VALUES(?,?,?,?)',[$name,$date,$venue,time()]);out(['ok'=>true,'id'=>(int)db()->lastInsertId()]);}
-if($method==='POST'&&preg_match('#^/api/admin/events/(\d+)/action$#',$path,$m)){admin(true);$d=input();$action=$d['action']??'';$id=(int)$m[1];tx(function()use($id,$action){sql('SELECT id FROM events ORDER BY id FOR UPDATE');$e=sql('SELECT * FROM events WHERE id=?',[$id])->fetch();if(!$e)err(404,'Event not found.');switch($action){case 'activate':if($e['archived'])err(409,'Restore event first.');sql('UPDATE events SET is_active=0,requests_open=0 WHERE is_active=1');sql('UPDATE events SET is_active=1,requests_open=0 WHERE id=?',[$id]);break;case 'deactivate':sql('UPDATE events SET is_active=0,requests_open=0 WHERE id=?',[$id]);break;case 'open':if(!$e['is_active']||$e['archived'])err(409,'Activate event first.');sql('UPDATE events SET requests_open=1 WHERE id=?',[$id]);break;case 'close':sql('UPDATE events SET requests_open=0 WHERE id=?',[$id]);break;case 'archive':sql('UPDATE events SET archived=1,is_active=0,requests_open=0 WHERE id=?',[$id]);break;case 'restore':sql('UPDATE events SET archived=0 WHERE id=?',[$id]);break;default:err(400,'Unknown action.');}});out(['ok'=>true]);}
+if($method==='POST'&&preg_match('#^/api/admin/events/(\d+)/action$#',$path,$m)){
+    admin(true);$action=input()['action']??'';$id=(int)$m[1];$hasSchedule=request_schedule_available();
+    tx(function()use($id,$action,$hasSchedule){
+        sql('SELECT id FROM events ORDER BY id FOR UPDATE');
+        $e=sql('SELECT * FROM events WHERE id=?',[$id])->fetch();
+        if(!$e)err(404,'Event not found.');
+        $schedule=$hasSchedule?sql('SELECT * FROM planner_request_schedule WHERE event_id=?',[$id])->fetch():false;
+        if($schedule){
+            if(in_array($action,['activate','open'],true)&&($e['archived']||!scheduled_window($schedule,time())))err(409,'This event is outside its Planner request hours.');
+            if(in_array($action,['activate','open','close','deactivate','auto'],true)){
+                if($action==='activate'||$action==='open'){
+                    sql('UPDATE events SET is_active=0,requests_open=0 WHERE is_active=1');
+                    sql('UPDATE events SET is_active=1,requests_open=? WHERE id=?',[$action==='open'?1:0,$id]);
+                } elseif($action==='deactivate'||$action==='auto'){
+                    sql('UPDATE events SET is_active=0,requests_open=0 WHERE id=?',[$id]);
+                } else {
+                    sql('UPDATE events SET requests_open=0 WHERE id=?',[$id]);
+                }
+                sql('UPDATE planner_request_schedule SET paused=? WHERE event_id=?',[in_array($action,['open','auto'],true)?0:1,$id]);
+                return;
+            }
+        }
+        switch($action){
+            case 'activate':if($e['archived'])err(409,'Restore event first.');sql('UPDATE events SET is_active=0,requests_open=0 WHERE is_active=1');sql('UPDATE events SET is_active=1,requests_open=0 WHERE id=?',[$id]);break;
+            case 'deactivate':sql('UPDATE events SET is_active=0,requests_open=0 WHERE id=?',[$id]);break;
+            case 'open':if(!$e['is_active']||$e['archived'])err(409,'Activate event first.');sql('UPDATE events SET requests_open=1 WHERE id=?',[$id]);break;
+            case 'close':sql('UPDATE events SET requests_open=0 WHERE id=?',[$id]);break;
+            case 'archive':sql('UPDATE events SET archived=1,is_active=0,requests_open=0 WHERE id=?',[$id]);break;
+            case 'restore':sql('UPDATE events SET archived=0 WHERE id=?',[$id]);break;
+            default:err(400,'Unknown action.');
+        }
+    });out(['ok'=>true]);
+}
 if($method==='GET'&&preg_match('#^/api/admin/events/(\d+)/requests$#',$path,$m)){admin();$id=(int)$m[1];if(!sql('SELECT id FROM events WHERE id=?',[$id])->fetch())err(404,'Event not found.');$r=sql('SELECT r.id,r.event_id,r.title,r.artist,r.note,r.status,r.created_at,COUNT(v.voter_key) AS votes FROM requests r LEFT JOIN votes v ON v.request_id=r.id WHERE r.event_id=? GROUP BY r.id ORDER BY votes DESC,r.created_at DESC',[$id])->fetchAll();foreach($r as &$x){foreach(['id','event_id','created_at','votes'] as $k)$x[$k]=(int)$x[$k];}unset($x);out(['requests'=>$r]);}
 if($method==='POST'&&preg_match('#^/api/admin/requests/(\d+)/status$#',$path,$m)){admin(true);$d=input();$status=$d['status']??'';if(!in_array($status,['pending','played','skipped'],true))err(400,'Invalid status.');sql('UPDATE requests SET status=? WHERE id=?',[$status,(int)$m[1]]);out(['ok'=>true]);}
 if($path==='/api/admin/settings'&&$method==='GET'){admin();guest_links_schema();out(links());}

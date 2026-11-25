@@ -10,7 +10,7 @@ A small PHP 8.1+ / MySQL app hosted on Cloudways. Repository: `vividtempo/go-eve
 - `/admin`: DJ login, live queue, event sessions, and settings.
 - `/qr`: authenticated printable QR sign. The same QR points to whichever event is active.
 
-The guest page and DJ queue refresh every 12 seconds. Activating a different event closes/deactivates the previous event and starts the new event closed. Opening requests is a separate action. Requests and votes remain attached to their event. Archived events retain their history. Dates currently label events only.
+The guest page and DJ queue refresh every 12 seconds. Activating a different event closes/deactivates the previous event and starts the new event closed. Opening requests is a separate action. Requests and votes remain attached to their event. Archived events retain their history. Dates on manual events are labels. Planner-linked events open and close on their saved booking window. The DJ can pause or resume them without clearing the queue.
 
 ## Files and data
 
@@ -40,7 +40,7 @@ Navy #010E3B, red #D8315B, blue #1955BD, Montserrat. Screen logos are white with
 ## Pending, explicitly on hold
 
 - Close requests automatically at **4 AM America/Chicago on the morning after the event date**, using local calendar time across daylight saving changes. This is requested but NOT implemented. Decide handling of undated events and manual reopen when implementing.
-- Connect a real booking-source workflow in n8n. API infrastructure is available; the workflow/source selection is deferred.
+- The direct Planner feature does not require n8n. Configure the existing Automation key on the Planner server and opt in from each booking.
 
 Do not assume either pending item is already active. Do not store passwords/API keys in this repository or this document.
 
