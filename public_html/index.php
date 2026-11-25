@@ -58,20 +58,20 @@ if($method==='POST'&&preg_match('#^/api/admin/events/(\d+)/action$#',$path,$m)){
         if($schedule){
             if(in_array($action,['activate','open'],true)&&($e['archived']||!scheduled_window($schedule,time())))err(409,'This event is outside its Planner request hours.');
             if(in_array($action,['activate','open','close','deactivate','auto'],true)){
-                if($action==='activate'||$action==='open'){
+                if(in_array($action,['activate','open'],true)){
                     sql('UPDATE events SET is_active=0,requests_open=0 WHERE is_active=1');
-                    sql('UPDATE events SET is_active=1,requests_open=? WHERE id=?',[$action==='open'?1:0,$id]);
+                    sql('UPDATE events SET is_active=1,requests_open=1 WHERE id=?',[$id]);
                 } elseif($action==='deactivate'||$action==='auto'){
                     sql('UPDATE events SET is_active=0,requests_open=0 WHERE id=?',[$id]);
                 } else {
                     sql('UPDATE events SET requests_open=0 WHERE id=?',[$id]);
                 }
-                sql('UPDATE planner_request_schedule SET paused=? WHERE event_id=?',[in_array($action,['open','auto'],true)?0:1,$id]);
+                sql('UPDATE planner_request_schedule SET paused=? WHERE event_id=?',[in_array($action,['activate','open','auto'],true)?0:1,$id]);
                 return;
             }
         }
         switch($action){
-            case 'activate':if($e['archived'])err(409,'Restore event first.');sql('UPDATE events SET is_active=0,requests_open=0 WHERE is_active=1');sql('UPDATE events SET is_active=1,requests_open=0 WHERE id=?',[$id]);break;
+            case 'activate':if($e['archived'])err(409,'Restore event first.');sql('UPDATE events SET is_active=0,requests_open=0 WHERE is_active=1');sql('UPDATE events SET is_active=1,requests_open=1 WHERE id=?',[$id]);break;
             case 'deactivate':sql('UPDATE events SET is_active=0,requests_open=0 WHERE id=?',[$id]);break;
             case 'open':if(!$e['is_active']||$e['archived'])err(409,'Activate event first.');sql('UPDATE events SET requests_open=1 WHERE id=?',[$id]);break;
             case 'close':sql('UPDATE events SET requests_open=0 WHERE id=?',[$id]);break;
