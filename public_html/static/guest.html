@@ -3,17 +3,18 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#010E3B">
+  <meta name="theme-color">
   <title>Song Requests | Go Event DJ</title>
   <link rel="icon" href="/static/images/favicon-96x96.png">
-  <link rel="stylesheet" href="/static/style.css?v=cover-v6">
+  <link rel="stylesheet" href="/static/style.css">
   <script defer src="/static/vendor/lottie_light.min.js"></script>
-  <script defer src="/static/brand.js?v=brand2"></script>
-  <script defer src="/static/icons.js?v=2"></script>
-  <script defer src="/static/guest.js?v=cover-v6"></script>
+  <script defer src="/static/brand.js"></script>
+  <script defer src="/static/icons.js"></script>
+  <script defer src="/static/tracks.js"></script>
+  <script defer src="/static/guest.js"></script>
 </head>
 <body>
-<main class="shell narrow guest-board">
+<main class="shell narrow">
 <div class="top"><a href="/requests" class="brand brand-lockup"><span class="brand-logo-frame"><img class="brand-logo" src="/static/images/go-event-dj-logo.svg?v=white" alt="Go Event DJ" width="451" height="161"><span class="brand-animation" aria-hidden="true"></span></span><small>THE SOUNDTRACK TO YOUR EVENT</small></a><div class="guest-top-tools"><span id="presence" class="presence hidden"><svg class="link-icon" aria-hidden="true"><use href="/static/images/guest-link-icons.svg?v=3#guests"></use></svg><span id="presence-count"></span></span><nav><a href="/admin">DJ login</a></nav></div></div>
   <div id="flash" class="hidden" role="status" aria-live="polite"></div>
   <div id="loading" class="panel">Loading event requests…</div>
@@ -24,21 +25,21 @@
       <p class="muted small" id="intro"></p>
       <div class="vibe hidden" id="vibe"><h2 id="vibe-title">Today's music vibe</h2><div class="genre-tags" id="genres"></div></div>
     </header>
-    <section id="entry" class="panel hidden">
+    <section id="entry" class="panel panel-compact hidden">
       <h2>Request a song</h2>
       <form id="request-form" class="stack">
         <div class="song-picker">
-          <div id="catalog-entry" class="stack">
+          <div id="catalog-entry" class="stack stack-tight">
             <div class="field"><label for="lookup">Song or artist</label><input type="search" id="lookup" maxlength="120" autocomplete="off" placeholder="Search by song or artist"></div>
-            <div id="search-hint" class="muted small" role="status"></div>
+            <div id="search-hint" class="search-hint muted small" role="status"></div>
           </div>
           <div id="manual-entry" class="hidden grid two">
             <div class="field"><label for="title">Song title</label><input id="title" maxlength="120" autocomplete="off"></div>
             <div class="field"><label for="artist">Artist</label><input id="artist" maxlength="120" autocomplete="off"></div>
           </div>
           <div class="result-panel">
-            <div id="suggestions"></div>
-            <div class="hidden" id="selection"></div>
+            <div id="suggestions" class="suggestions"></div>
+            <div class="selected-track hidden" id="selection"></div>
             <button type="button" class="text-action" id="manual-toggle"><svg class="link-icon" aria-hidden="true"><use href="/static/images/guest-link-icons.svg?v=3#plus-circle"></use></svg><span>Enter request manually</span></button>
           </div>
         </div>
@@ -48,7 +49,7 @@
         <button class="btn primary full" id="submit-btn" disabled>Send Song Request</button>
       </form>
     </section>
-    <section id="queue" class="panel hidden">
+    <section id="queue" class="panel request-panel hidden">
       <div class="section-title"><h2>Guest requests</h2><span class="muted small" id="request-count"></span></div>
       <div class="tabbar queue-tabs" aria-label="Filter guest requests">
         <button class="btn small active" type="button" data-filter="pending" aria-pressed="true">Pending</button>
@@ -59,11 +60,11 @@
       <input type="search" id="search" class="find" aria-label="Filter guest requests by song or artist" placeholder="Find a request">
       <div id="requests-list"></div>
     </section>
-    <section class="panel hidden" id="external-links"><h2>Enjoying the experience?</h2>
+    <section class="panel connection-panel hidden" id="external-links"><h2>Enjoying the experience?</h2>
       <p class="muted connection-copy">Bring Go Event DJ to your next celebration.</p>
-      <div id="booking-link"></div>
+      <div id="booking-link" class="booking-link"></div>
       <div class="tiprow" id="guest-link-buttons"></div>
-      <div id="social-links" class="hidden"><h3>Connect with us</h3><div class="social-row" id="custom-link-buttons"></div></div></section>
+      <div id="social-links" class="social-links hidden"><h3>Connect with us</h3><div class="social-row" id="custom-link-buttons"></div></div></section>
   </div>
   <footer class="footer">GO EVENT DJ · Music requests subject to DJ discretion</footer>
 </main>

@@ -31,7 +31,21 @@ require __DIR__.'/automation.php';
 require __DIR__.'/catalog.php';
 require __DIR__.'/request_queue.php';
 if($path==='/'&&$method==='GET'){header('Location: /requests',true,307);exit;}
-if($method==='GET'&&in_array($path,['/requests','/admin','/qr'],true)){if($path==='/qr')admin();$file=['/requests'=>'guest.html','/admin'=>'admin.html','/qr'=>'qr.html'][$path];header('Content-Type: text/html; charset=utf-8');readfile(__DIR__.'/static/'.$file);exit;}
+$pages = ['/requests'=>'guest.html', '/admin'=>'admin.html', '/qr'=>'qr.html'];
+if ($method === 'GET' && isset($pages[$path])) {
+    if ($path === '/qr') admin();
+    $html = file_get_contents(__DIR__.'/static/'.$pages[$path]);
+    // Give all three pages the same cache key for each deployed stylesheet or script.
+    $html = preg_replace_callback('~((?:href|src)=")(/static/[a-zA-Z0-9_./-]+\.(?:css|js))"~',
+        static function (array $asset): string {
+            $version = substr(hash_file('sha256', __DIR__.$asset[2]), 0, 12);
+            return $asset[1].$asset[2].'?v='.$version.'"';
+        }, $html);
+    header('Content-Type: text/html; charset=utf-8');
+    header('Cache-Control: private, no-cache');
+    echo $html;
+    exit;
+}
 if ($path==='/api/board' && $method==='GET') out(request_board());
 if ($path==='/api/requests' && $method==='POST') out(submit_request(input()));
 if ($method==='POST' && preg_match('#^/api/requests/(\d+)/vote$#',$path,$m)) out(record_vote((int)$m[1],input()));

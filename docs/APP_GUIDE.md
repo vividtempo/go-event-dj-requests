@@ -17,7 +17,8 @@ The guest page and DJ queue refresh every 12 seconds. **Activate** selects the e
 - `public_html/index.php`: routing, password/session/CSRF protection, event actions, requests, voting, tip/review settings, QR URL.
 - `public_html/automation.php`: dedicated hashed API key management and event-only `/api/v1` routes. See [API.md](API.md).
 - `public_html/guest_links.php`: additional contact/social links and validation.
-- `public_html/static/`: templates, JS, shared CSS, self-hosted Montserrat and Lottie player, logo assets.
+- `public_html/static/style.css` defines the app theme in `:root` and the reusable controls, cards, and responsive layouts for the guest board, DJ dashboard, and QR sign.
+- `public_html/static/tracks.js` renders each song’s title, artist, cover or fallback icon, and linked store badge in search, the selected-song preview, and both queues.
 - `schema.sql`: schema for new installations. New settings tables are also created on authenticated settings access for existing installations.
 - `private/config.example.php`: placeholder configuration template. Actual `private/config.php` is ignored by Git and must never be committed.
 
@@ -25,7 +26,7 @@ Original tables: events, requests, votes, rate_events, admin_sessions, settings.
 
 ## Guest requests and DJ moderation
 
-The guest form searches the US iTunes catalog by song or artist. Guests can also enter the title and artist manually. Catalog results, the selected-song preview, and Guest requests display available album covers with Apple’s compact, linked iTunes Store badge. Tapping a search result selects the song. Tapping its badge opens the store. Songs with unavailable artwork use a music-note tile. The server verifies selected track metadata. Search requires the PHP cURL extension and outbound HTTPS to itunes.apple.com. An unavailable catalog leaves manual entry available.
+The guest form searches the US iTunes catalog by song or artist. Guests can also enter the title and artist manually. Catalog results, the selected-song preview, Guest requests, and the DJ Control Center display available album covers with Apple’s compact, linked iTunes Store badge. Tapping a search result selects the song. Tapping its badge opens the store. Songs with unavailable artwork use a music-note tile. The server verifies selected track metadata. Search requires the PHP cURL extension and outbound HTTPS to itunes.apple.com. An unavailable catalog leaves manual entry available.
 
 The DJ can accept, mark played, decline, or restore a request. Guests see pending, accepted, and played songs ranked by net votes within each group. Guests can vote in either direction on pending or accepted songs while requests are open. Only the DJ sees requester names, dedications, and declined songs. Active guests counts distinct browser cookies seen on the current event in the last minute. The permanent QR opens the same guest page for every event.
 

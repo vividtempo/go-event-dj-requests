@@ -1,5 +1,6 @@
 // Run with PHP_WASM_DIR pointing to node_modules containing @php-wasm/node and universal.
-import {readFileSync} from 'node:fs';
+import {readFileSync, readdirSync} from 'node:fs';
+import {createHash} from 'node:crypto';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import assert from 'node:assert/strict';
@@ -48,6 +49,28 @@ async function req(url,method='GET',data,headers={}) {
     return {status:r.httpStatusCode,data:JSON.parse(r.text)};
 }
 try {
+// Exercise the same PHP entry points Cloudways serves, including the authenticated QR sign.
+php.mkdir('/app/static');
+php.mkdir('/app/static/vendor');
+const templates = new URL('../public_html/static/', import.meta.url);
+for (const file of readdirSync(templates).filter(name => /\.(html|css|js)$/.test(name))) {
+    php.writeFile('/app/static/'+file, read('static/'+file));
+}
+php.writeFile('/app/static/vendor/lottie_light.min.js', read('static/vendor/lottie_light.min.js'));
+const css = read('static/style.css');
+for (const theme of [css, css+'\n/* test updated theme */']) {
+    php.writeFile('/app/static/style.css', theme);
+    const hash = createHash('sha256').update(theme).digest('hex').slice(0, 12);
+    for (const route of ['/requests', '/admin', '/qr']) {
+        const page = await php.run({scriptPath:'/app/index.php', relativeUri:route, headers:{Cookie:'dj_admin='+dj},
+            $_SERVER:{REQUEST_URI:route, REQUEST_METHOD:'GET'}});
+        assert.equal(page.errors, '');
+        assert.equal(page.httpStatusCode, 200);
+        const styles = [...page.text.matchAll(/<link rel="stylesheet" href="([^"]+)"/g)].map(match => match[1]);
+        assert.deepEqual(styles, ['/static/style.css?v='+hash]);
+        if (route !== '/qr') assert.match(page.text, /src="\/static\/tracks\.js\?v=[a-f0-9]{12}"/);
+    }
+}
 const base='/api/v1/events/planner-sync', now=Math.floor(Date.now()/1000);
 const details={external_id:'planner:'+'1'.repeat(32),name:'Planner party',date:'2027-12-31',venue:'Hall',timezone:'America/Chicago',opens_at:now+3600,closes_at:now+7200,source_revision:1,target_event_id:7,genres:['Dance / Electronic','House Music']};
 const sync=async data=>req(base,'POST',data,{'X-API-Key':key});

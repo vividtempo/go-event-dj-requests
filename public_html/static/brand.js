@@ -1,4 +1,7 @@
 (() => {
+  const themeColor = document.querySelector('meta[name="theme-color"]');
+  if (themeColor) themeColor.content = getComputedStyle(document.documentElement).getPropertyValue('--navy').trim();
+
   const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
   const frames = [...document.querySelectorAll('.brand-logo-frame')];
   let animations = [];

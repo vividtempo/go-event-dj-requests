@@ -7,12 +7,6 @@ let searchTimer, searchController, flashTimer;
 let loadVersion = 0;
 let sending = false;
 
-function el(tag, className, text) {
-    const node = document.createElement(tag);
-    if (className) node.className = className;
-    if (text !== undefined) node.textContent = text;
-    return node;
-}
 function show(id, visible) { $(id).classList.toggle('hidden', !visible); }
 function message(text, bad = false) {
     $('flash').textContent = text;
@@ -27,45 +21,6 @@ async function api(url, body, signal) {
     const data = await response.json();
     if (!response.ok) throw Error(data.detail || 'Please try again.');
     return data;
-}
-
-function songInfo(song) {
-    const info = el('span', 'song');
-    info.append(el('span', 'song-title', song.title), el('span', 'song-artist', song.artist));
-    return info;
-}
-function musicTile() {
-    const tile = el('span', 'music-tile');
-    tile.append(interfaceIcon('music-note'));
-    return tile;
-}
-function trackIdentity(song, status) {
-    const identity = el('div', 'track-identity');
-    const info = songInfo(song);
-    if (status) info.append(el('span', 'song-status '+status, status[0].toUpperCase()+status.slice(1)));
-    const tile = musicTile();
-    identity.append(tile, info);
-    if (/^https:\/\/[a-z0-9-]+\.mzstatic\.com\/image\//i.test(song.artwork_url)
-        && /^https:\/\/(music|itunes)\.apple\.com\//i.test(song.store_url)) {
-        const cover = el('img', 'track-cover');
-        cover.alt = '';
-        cover.loading = 'lazy';
-        cover.width = cover.height = 64;
-        const link = el('a', 'store-badge');
-        link.href = song.store_url;
-        link.target = '_blank';
-        link.rel = 'noopener noreferrer';
-        link.setAttribute('aria-label', song.title+' by '+song.artist+' on the iTunes Store');
-        const badge = el('img');
-        badge.alt = 'iTunes Store';
-        badge.src = '/static/images/itunes-store-small.svg';
-        link.append(badge);
-        cover.addEventListener('error', () => { cover.replaceWith(tile); link.remove(); }, {once:true});
-        tile.replaceWith(cover);
-        identity.append(link);
-        cover.src = song.artwork_url;
-    }
-    return identity;
 }
 
 function updateSubmit() {
@@ -164,9 +119,9 @@ function renderSongs() {
     list.replaceChildren();
     if (!items.length) list.append(el('p','empty',query ? 'No matching requests.' : 'No '+filter+' requests yet.'));
     for (const song of items) {
-        const row = el('div','request');
-        row.append(trackIdentity(song, song.status));
-        const votes = el('div','vote-controls');
+        const row = el('div','request-row request');
+        row.append(trackIdentity(song, {status:song.status}));
+        const votes = el('div','request-tools vote-controls');
         for (const direction of [1,-1]) {
             if (direction === -1) votes.append(el('span','number',song.votes));
             if (board.state !== 'open' || song.status === 'played') continue;
