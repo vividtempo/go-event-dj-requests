@@ -8,13 +8,107 @@ function node(t,c,s){const n=document.createElement(t);if(c)n.className=c;if(s!=
 function btn(text,action,variant='small'){const b=node('button','btn '+variant,text);b.type='button';b.addEventListener('click',action);return b}
 function options(parent,items){parent.replaceChildren(...items)}
 function selectedTab(name){for(const b of document.querySelectorAll('[data-tab]'))b.classList.toggle('active',b.dataset.tab===name);for(const id of ['live','events','settings'])$(id+'-tab').className=id===name?'stack':'hidden'}
-async function refresh(){const data=await api('/api/admin/events');events=data.events;scheduleConflict=data.schedule_conflict;const active=events.find(e=>e.is_active);if(!selectedEvent||!events.some(e=>e.id===selectedEvent))selectedEvent=active?.id||(events[0]?.id??null);renderActive();renderEvents();if(selectedEvent)await loadQueue();else{$('queue-list').replaceChildren(node('div','empty','Create and activate an event to start.'))}$('qr-url').textContent=(await api('/api/admin/qr-link')).url;}
-function renderActive(){const active=events.find(e=>e.is_active),target=$('active-summary');target.replaceChildren();if(!active){const h=node('h2','','No active event');target.append(h,node('p','muted small',scheduleConflict?'Two scheduled events overlap. Select Activate on the correct event to go live.':'Scheduled events open automatically. To open a manual event, select Activate under Events.'));return;}const head=node('div','row wrap');const info=node('div');info.append(node('div','eyebrow','CURRENT EVENT'),node('h2','',active.name),node('p','muted small',active.requests_open?'Guest requests are open':'Guest requests are closed'));head.append(info,node('span','badge '+(active.requests_open?'open':'closed'),active.requests_open?'LIVE • OPEN':'CLOSED'));const actions=node('div','actions');actions.append(btn(active.requests_open?'Close Requests':'Open Requests',()=>eventAction(active.id,active.requests_open?'close':'open'),active.requests_open?'ghost':'primary'));actions.append(btn(active.scheduled?'Pause & Deselect':'Deactivate',()=>eventAction(active.id,'deactivate'),'small ghost'));actions.append(btn('Print QR',()=>window.open('/qr','_blank'),'small'));target.append(head,actions);}
+async function refresh(){const data=await api('/api/admin/events');events=data.events;scheduleConflict=data.schedule_conflict;const active=events.find(e=>e.is_active);if(!selectedEvent||!events.some(e=>e.id===selectedEvent))selectedEvent=active?.id||(events[0]?.id??null);renderActive();renderEvents();if(selectedEvent)await loadQueue();else{$('queue-state').classList.add('hidden');songs=[];renderStats(0);renderQueue();$('queue-event-name').textContent='Select an event';$('queue-list').replaceChildren(node('div','empty','Create and activate an event to start.'))}$('qr-url').textContent=(await api('/api/admin/qr-link')).url;}
+function renderActive() {
+    const active = events.find(event => event.is_active);
+    const target = $('active-summary');
+    target.replaceChildren();
+    if (!active) {
+        target.append(node('h2', '', 'No active event'), node('p', 'muted small', scheduleConflict
+            ? 'Two scheduled events overlap. Select Activate on the correct event to go live.'
+            : 'Scheduled events open automatically. To open a manual event, select Activate under Events.'));
+        return;
+    }
+    if (active.id !== selectedEvent) target.append(node('p', 'muted small', 'Live event · '+active.name));
+    const actions = node('div', 'actions');
+    actions.append(
+        btn(active.requests_open ? 'Close requests' : 'Open requests', () => eventAction(active.id, active.requests_open ? 'close' : 'open'), 'small ghost'),
+        btn(active.scheduled ? 'Pause & deselect' : 'Deactivate', () => eventAction(active.id, 'deactivate'), 'small ghost'),
+        btn('Print QR', () => window.open('/qr','_blank','noopener'), 'small ghost')
+    );
+    target.append(actions);
+}
 function renderEvents(){const list=$('event-list');list.replaceChildren();if(!events.length){list.append(node('div','empty','No events yet.'));return;}for(const e of events){const row=node('div','event-row');const head=node('div','row wrap');const name=node('div');name.append(node('div','event-name',e.name));name.append(node('div','muted small',[e.event_date,e.venue].filter(Boolean).join(' · ')||'No date or venue entered'));if(e.scheduled){const fmt=new Intl.DateTimeFormat(undefined,{dateStyle:'medium',timeStyle:'short',timeZone:e.timezone});name.append(node('div','muted small',e.opens_at>0?fmt.format(e.opens_at*1000)+' to '+fmt.format(e.closes_at*1000)+' ('+e.timezone+')':'Planner schedule disabled'));}
 head.append(name,node('span','badge '+(e.is_active?'open':e.archived?'archived':'closed'),e.is_active?'Active':e.archived?'Archived':e.paused?'Paused':e.scheduled?'Scheduled':'Inactive'));const actions=node('div','actions');actions.style.marginTop='9px';name.append(node('div','muted small','Request event #'+e.id));actions.append(btn('View Queue',async()=>{selectedEvent=e.id;await loadQueue();selectedTab('live')},'small'));if(e.scheduled&&e.paused&&!e.archived)actions.append(btn('Resume Schedule',()=>eventAction(e.id,'auto'),'small ghost'));if(!e.is_active&&!e.archived&&(!e.scheduled||e.in_window))actions.append(btn('Activate',()=>eventAction(e.id,'activate'),'small success'));if(e.archived)actions.append(btn('Restore',()=>eventAction(e.id,'restore'),'small ghost'));else if(!e.is_active)actions.append(btn('Archive',()=>eventAction(e.id,'archive'),'small ghost'));row.append(head,actions);list.append(row);}}
 async function eventAction(id,action){try{await api(`/api/admin/events/${id}/action`,'POST',{action});if(action==='activate')selectedEvent=id;msg(action==='activate'?'Event is live. Guests can submit requests.':`Event ${action} successful.`);await refresh();}catch(e){msg(e.message,true)}}
-async function loadQueue(){if(!selectedEvent)return;const ev=events.find(e=>e.id===selectedEvent);$('queue-event-name').textContent=ev?ev.name:'Event queue';const id=selectedEvent;const r=await api(`/api/admin/events/${id}/requests`);if(id!==selectedEvent)return;$('active-guests').textContent=r.active_guests+' active guest'+(r.active_guests===1?'':'s')+' in the last minute';songs=r.requests;renderQueue();}
-function renderQueue(){const box=$('queue-list');box.replaceChildren();const filtered=songs.filter(x=>x.status===statusFilter);for(const b of document.querySelectorAll('[data-status]')){b.classList.toggle('active',b.dataset.status===statusFilter);b.textContent=b.dataset.status.charAt(0).toUpperCase()+b.dataset.status.slice(1)+' ('+songs.filter(s=>s.status===b.dataset.status).length+')';}if(!filtered.length){box.append(node('div','empty','Nothing in this queue.'));return;}for(const s of filtered){const wrap=node('div','request');const votes=node('div','votes');votes.append(node('div','number',s.votes),node('small','',Math.abs(s.votes)===1?'VOTE':'VOTES'));const main=node('div','song');main.append(node('div','song-title',s.title),node('div','song-artist',s.artist+' · '+new Date(s.created_at*1000).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})));if(s.requester_name)main.append(node('div','note','From '+s.requester_name));if(s.note)main.append(node('div','note','Note: '+s.note));wrap.append(votes,main);const actions=node('div','actions');if(s.status==='pending')actions.append(btn('Accept',()=>setStatus(s.id,'accepted'),'small primary'));if(['pending','accepted'].includes(s.status)){actions.append(btn('✓ Played',()=>setStatus(s.id,'played'),'small success'),btn('Decline',()=>setStatus(s.id,'declined'),'small ghost'));}else{actions.append(btn('Restore',()=>setStatus(s.id,'pending'),'small'));}wrap.append(actions);box.append(wrap);}}
+let queueVersion = 0;
+async function loadQueue() {
+    if (!selectedEvent) return;
+    const id = selectedEvent;
+    const version = ++queueVersion;
+    const data = await api(`/api/admin/events/${id}/requests`);
+    if (version !== queueVersion || id !== selectedEvent) return;
+    const event = events.find(event => event.id === id);
+    $('queue-event-name').textContent = event?.name || 'Event queue';
+    const live = event?.is_active && event.requests_open;
+    const state = $('queue-state');
+    state.className = 'badge '+(live ? 'open' : 'closed');
+    state.textContent = live ? 'Live · Requests open' : event?.archived ? 'Archived' : 'Requests closed';
+    renderActive();
+    songs = data.requests;
+    renderStats(data.active_guests);
+    renderQueue();
+}
+
+function renderStats(activeGuests) {
+    $('active-guests').textContent = activeGuests;
+    $('total-requests').textContent = songs.length;
+    $('played-requests').textContent = songs.filter(song => song.status === 'played').length;
+}
+
+function copySongButton(song) {
+    const label = 'Copy '+song.title+' by '+song.artist;
+    const button = btn('', async () => {
+        try {
+            await navigator.clipboard.writeText(song.title+' · '+song.artist);
+            msg('Song and artist copied.');
+        } catch {
+            msg('Clipboard unavailable. Select the song title and artist to copy them.', true);
+        }
+    }, 'icon-button');
+    button.append(interfaceIcon('copy'));
+    button.title = label;
+    button.setAttribute('aria-label', label);
+    return button;
+}
+
+function renderQueue() {
+    const box = $('queue-list');
+    box.replaceChildren();
+    for (const tab of document.querySelectorAll('[data-status]')) {
+        const status = tab.dataset.status;
+        tab.classList.toggle('active', status === statusFilter);
+        tab.setAttribute('aria-pressed', String(status === statusFilter));
+        tab.textContent = status[0].toUpperCase()+status.slice(1)+' ('+songs.filter(s => s.status === status).length+')';
+    }
+    const filtered = songs.filter(song => song.status === statusFilter);
+    if (!filtered.length) box.append(node('div', 'empty', 'No '+statusFilter+' requests.'));
+    for (const song of filtered) {
+        const card = node('article', 'queue-card');
+        const info = node('div', 'song');
+        info.append(node('h3', 'song-title', song.title), node('div', 'song-artist', song.artist));
+        const time = new Date(song.created_at*1000).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
+        info.append(node('div', 'request-by', 'Requested by '+(song.requester_name || 'Anonymous')+' · '+time));
+        if (song.note) info.append(node('p', 'note', song.note));
+
+        const tools = node('div', 'queue-tools');
+        const votes = node('span', 'vote-score', song.votes);
+        votes.setAttribute('aria-label', song.votes+' net votes');
+        votes.prepend(interfaceIcon('thumb-up'));
+        tools.append(votes, copySongButton(song));
+
+        const actions = node('div', 'actions');
+        if (song.status === 'pending') actions.append(btn('Accept', () => setStatus(song.id, 'accepted')));
+        if (song.status === 'pending' || song.status === 'accepted') {
+            actions.append(btn('Mark played', () => setStatus(song.id, 'played')),
+                btn('Decline', () => setStatus(song.id, 'declined'), 'small decline'));
+        } else {
+            actions.append(btn('Restore', () => setStatus(song.id, 'pending')));
+        }
+        card.append(info, tools, actions);
+        box.append(card);
+    }
+}
 async function setStatus(id,status){try{await api(`/api/admin/requests/${id}/status`,'POST',{status});await loadQueue();}catch(e){msg(e.message,true)}}
 $('login-form').addEventListener('submit',async e=>{e.preventDefault();$('login-btn').disabled=true;try{const r=await api('/api/admin/login','POST',{password:$('password').value});csrf=r.csrf;$('password').value='';showDashboard();await refresh();await loadSettings();}catch(err){msg(err.message,true)}finally{$('login-btn').disabled=false}});
 $('event-form').addEventListener('submit',async e=>{e.preventDefault();try{await api('/api/admin/events','POST',{name:$('event-name').value,date:$('event-date').value,venue:$('event-venue').value});e.target.reset();msg('Event created. Activate it to receive requests.');await refresh();}catch(err){msg(err.message,true)}});

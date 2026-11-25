@@ -3,17 +3,18 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#0b1528">
+  <meta name="theme-color" content="#010E3B">
   <title>Song Requests | Go Event DJ</title>
   <link rel="icon" href="/static/images/favicon-96x96.png">
-  <link rel="stylesheet" href="/static/style.css?v=guest-v3">
+  <link rel="stylesheet" href="/static/style.css?v=navy-v4">
   <script defer src="/static/vendor/lottie_light.min.js"></script>
   <script defer src="/static/brand.js?v=brand2"></script>
-  <script defer src="/static/guest.js?v=guest-v3"></script>
+  <script defer src="/static/icons.js?v=1"></script>
+  <script defer src="/static/guest.js?v=navy-v4"></script>
 </head>
 <body>
 <main class="shell narrow guest-board">
-<div class="top"><a href="/requests" class="brand brand-lockup"><span class="brand-logo-frame"><img class="brand-logo" src="/static/images/go-event-dj-logo.svg" alt="Go Event DJ" width="451" height="161"><span class="brand-animation" aria-hidden="true"></span></span><small>THE SOUNDTRACK TO YOUR EVENT</small></a><nav><a href="/admin">DJ login</a></nav></div>
+<div class="top"><a href="/requests" class="brand brand-lockup"><span class="brand-logo-frame"><img class="brand-logo" src="/static/images/go-event-dj-logo.svg?v=white" alt="Go Event DJ" width="451" height="161"><span class="brand-animation" aria-hidden="true"></span></span><small>THE SOUNDTRACK TO YOUR EVENT</small></a><nav><a href="/admin">DJ login</a></nav></div>
   <div id="flash" class="hidden" role="status" aria-live="polite"></div>
   <div id="loading" class="panel">Loading event requests…</div>
   <div id="board" class="hidden stack">
@@ -26,27 +27,29 @@
     <section id="entry" class="panel hidden">
       <h2>Request a song</h2>
       <form id="request-form" class="stack">
-        <div id="catalog-entry" class="stack">
-          <div class="field"><label for="lookup">Song or artist</label><input type="search" id="lookup" maxlength="120" autocomplete="off" placeholder="Search by song or artist"></div>
-          <div id="search-hint" class="muted small" role="status"></div>
-          <div class="suggestions" id="suggestions"></div>
-          <div class="hidden" id="selection"></div>
+        <div class="song-picker">
+          <div id="catalog-entry" class="stack">
+            <div class="field"><label for="lookup">Song or artist</label><input type="search" id="lookup" maxlength="120" autocomplete="off" placeholder="Search by song or artist"></div>
+            <div id="search-hint" class="muted small" role="status"></div>
+          </div>
+          <div id="manual-entry" class="hidden grid two">
+            <div class="field"><label for="title">Song title</label><input id="title" maxlength="120" autocomplete="off"></div>
+            <div class="field"><label for="artist">Artist</label><input id="artist" maxlength="120" autocomplete="off"></div>
+          </div>
+          <div class="result-panel">
+            <div id="suggestions"></div>
+            <div class="hidden" id="selection"></div>
+            <button type="button" class="text-action" id="manual-toggle"><svg class="link-icon" aria-hidden="true"><use href="/static/images/guest-link-icons.svg?v=2#plus-circle"></use></svg><span>Enter request manually</span></button>
+          </div>
         </div>
-        <div id="manual-entry" class="hidden grid two">
-          <div class="field"><label for="title">Song title</label><input id="title" maxlength="120" autocomplete="off"></div>
-          <div class="field"><label for="artist">Artist</label><input id="artist" maxlength="120" autocomplete="off"></div>
-        </div>
-        <button type="button" class="text-action" id="manual-toggle">Enter song manually</button>
-        <details><summary>Add your name or a dedication <span class="muted">(optional)</span></summary>
-          <div class="stack space-top"><div class="field"><label for="requester">Your name</label><input id="requester" maxlength="80" autocomplete="given-name"></div>
-          <div class="field"><label for="note">Dedication or note to the DJ</label><input id="note" maxlength="240"></div></div>
-        </details>
+        <div class="field"><label for="requester">Your name <span>(optional)</span></label><input id="requester" maxlength="80" autocomplete="given-name" placeholder="Your name"></div>
+        <div class="field"><label for="note">Dedication or special note <span>(optional)</span></label><textarea id="note" maxlength="240" rows="2" placeholder="A message for the DJ"></textarea></div>
         <div class="hidden"><label for="website">Website</label><input id="website" tabindex="-1" autocomplete="off"></div>
-        <button class="btn primary full" id="submit-btn">Send song request</button>
+        <button class="btn primary full" id="submit-btn" disabled>Send Song Request</button>
       </form>
     </section>
     <section id="queue" class="panel hidden">
-      <div class="section-title"><h2>Guest requests</h2><span class="badge" id="request-count"></span></div>
+      <div class="section-title"><h2>Guest requests</h2><span class="muted small" id="request-count"></span></div>
       <div class="tabbar queue-tabs" aria-label="Filter guest requests">
         <button class="btn small active" type="button" data-filter="pending" aria-pressed="true">Pending</button>
         <button class="btn small" type="button" data-filter="accepted" aria-pressed="false">Accepted</button>

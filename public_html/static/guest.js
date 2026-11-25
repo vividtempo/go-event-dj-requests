@@ -30,30 +30,28 @@ async function api(url, body, signal) {
 }
 
 function songInfo(song) {
-    const info = el('div', 'song');
-    info.append(el('div', 'song-title', song.title), el('div', 'song-artist', song.artist));
+    const info = el('span', 'song');
+    info.append(el('span', 'song-title', song.title), el('span', 'song-artist', song.artist));
     return info;
 }
-function addStoreInfo(row, song) {
-    if (!song.store_url) return;
-    if (song.artwork_url) {
-        const art = el('img', 'cover');
-        art.alt = '';
-        art.loading = 'lazy';
-        art.src = song.artwork_url;
-        art.addEventListener('error', () => art.remove(), {once: true});
-        row.prepend(art);
-    }
-    const link = el('a', 'store-link');
-    link.href = song.store_url;
-    link.target = '_blank';
-    link.rel = 'noopener noreferrer';
-    const badge = el('img');
-    badge.src = '/static/images/get-it-on-itunes.svg';
-    badge.alt = 'Get '+song.title+' on iTunes';
-    link.append(badge);
-    row.querySelector('.song').append(link);
+function musicTile() {
+    const tile = el('span', 'music-tile');
+    tile.append(interfaceIcon('music-note'));
+    return tile;
 }
+function trackIdentity(song, status) {
+    const identity = el('div', 'track-identity');
+    const info = songInfo(song);
+    if (status) info.append(el('span', 'song-status '+status, status[0].toUpperCase()+status.slice(1)));
+    identity.append(musicTile(), info);
+    return identity;
+}
+
+function updateSubmit() {
+    const hasSong = manual ? $('title').value.trim() && $('artist').value.trim() : selected;
+    $('submit-btn').disabled = sending || board.state !== 'open' || !hasSong;
+}
+for (const id of ['title','artist']) $(id).addEventListener('input', updateSubmit);
 
 function stopSearch() {
     clearTimeout(searchTimer);
@@ -65,6 +63,7 @@ function clearSelection() {
     selected = null;
     $('selection').replaceChildren();
     show('selection', false);
+    updateSubmit();
 }
 function setManual(value) {
     stopSearch();
@@ -73,18 +72,20 @@ function setManual(value) {
     show('manual-entry', manual);
     show('catalog-entry', !manual);
     $('title').required = $('artist').required = manual;
-    $('manual-toggle').textContent = manual ? 'Search the music catalog' : 'Enter song manually';
+    $('manual-toggle').querySelector('span').textContent = manual ? 'Search the music catalog' : 'Enter request manually';
+    updateSubmit();
 }
 function choose(song) {
     stopSearch();
     selected = song;
     $('lookup').value = song.title+' · '+song.artist;
     const row = el('div', 'track-row');
-    row.append(songInfo(song));
-    addStoreInfo(row, song);
+    row.append(trackIdentity(song));
     $('selection').replaceChildren(row);
     show('selection', true);
-    $('submit-btn').focus();
+    updateSubmit();
+    row.tabIndex = -1;
+    row.focus({preventScroll: true});
 }
 $('lookup').addEventListener('input', () => {
     clearSelection();
@@ -98,15 +99,13 @@ $('lookup').addEventListener('input', () => {
         try {
             const {songs} = await api('/api/catalog?q='+encodeURIComponent(term), undefined, controller.signal);
             if (controller.signal.aborted) return;
-            $('search-hint').textContent = songs.length ? 'Choose a song' : 'No matches. You can enter the song manually.';
+            $('search-hint').textContent = songs.length ? '' : 'No matches. You can enter the song manually.';
             for (const song of songs) {
-                const row = el('div', 'track-row');
-                const chooseButton = el('button', 'btn small', 'Choose');
-                chooseButton.type = 'button';
-                chooseButton.setAttribute('aria-label', 'Choose '+song.title+' by '+song.artist);
-                chooseButton.addEventListener('click', () => choose(song));
-                row.append(songInfo(song), chooseButton);
-                addStoreInfo(row, song);
+                const row = el('button', 'search-result');
+                row.type = 'button';
+                row.setAttribute('aria-label', 'Choose '+song.title+' by '+song.artist);
+                row.addEventListener('click', () => choose(song));
+                row.append(musicTile(), songInfo(song), interfaceIcon('plus'));
                 $('suggestions').append(row);
             }
         } catch {
@@ -122,7 +121,6 @@ $('manual-toggle').addEventListener('click', () => {
 });
 function resetEntry() {
     $('request-form').reset();
-    $('request-form').querySelector('details').open = false;
     setManual(false);
 }
 
@@ -142,13 +140,13 @@ function renderSongs() {
     if (!items.length) list.append(el('p','empty',query ? 'No matching requests.' : 'No '+filter+' requests yet.'));
     for (const song of items) {
         const row = el('div','request');
-        row.append(songInfo(song));
-        addStoreInfo(row, song);
+        row.append(trackIdentity(song, song.status));
         const votes = el('div','vote-controls');
         for (const direction of [1,-1]) {
             if (direction === -1) votes.append(el('span','number',song.votes));
             if (board.state !== 'open' || song.status === 'played') continue;
-            const button = el('button','btn small',direction === 1 ? '↑' : '↓');
+            const button = el('button','btn icon-button');
+            button.append(interfaceIcon(direction === 1 ? 'thumb-up' : 'thumb-down'));
             button.type = 'button';
             button.setAttribute('aria-label',(direction === 1 ? 'Upvote ' : 'Downvote ')+song.title);
             button.setAttribute('aria-pressed',String(song.my_vote === direction));
@@ -195,15 +193,9 @@ function renderLinks() {
         const platform = platforms.find(([host]) => url.hostname === host || url.hostname.endsWith('.'+host));
         const icon = item.icon || (url.protocol === 'tel:' ? 'phone' : url.protocol === 'mailto:' ? 'email' : platform?.[1] || 'link');
         const link = el('a', 'btn'+(item.icon === 'booking' ? ' primary' : ''));
-        const symbol = document.createElementNS('http://www.w3.org/2000/svg','svg');
-        const mark = document.createElementNS(symbol.namespaceURI,'use');
-        mark.setAttribute('href','/static/images/guest-link-icons.svg#'+icon);
-        symbol.setAttribute('class','link-icon');
-        symbol.append(mark);
-        symbol.setAttribute('aria-hidden','true');
         link.href = url.href;
         if (url.protocol === 'https:') { link.target = '_blank'; link.rel = 'noopener noreferrer'; }
-        link.append(symbol,document.createTextNode(item.label));
+        link.append(interfaceIcon(icon),document.createTextNode(item.label));
         (item.icon ? box : custom).append(link);
     }
     show('social-links',custom.childElementCount > 0);
@@ -215,6 +207,7 @@ function render() {
     show('loading',false);
     show('board',true);
     show('entry',open);
+    updateSubmit();
     show('queue',Boolean(event));
     $('event-name').textContent = event?.name || 'Song requests';
     $('state').className = 'badge '+(open ? 'open' : 'closed');
@@ -259,7 +252,7 @@ $('request-form').addEventListener('submit',async e => {
         resetEntry();
         await load();
     } catch (err) { message(err.message,true); }
-    finally { sending = $('submit-btn').disabled = false; }
+    finally { sending = false; updateSubmit(); }
 });
 load();
 setInterval(() => { if (!document.hidden) load(); },12000);
