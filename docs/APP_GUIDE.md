@@ -10,7 +10,7 @@ A small PHP 8.1+ / MySQL app hosted on Cloudways. Repository: `vividtempo/go-eve
 - `/admin`: DJ login, live queue, event sessions, and settings.
 - `/qr`: authenticated printable QR sign. The same QR points to whichever event is active.
 
-The guest page and DJ queue refresh every 12 seconds. Activating a different event closes/deactivates the previous event and starts the new event closed. Opening requests is a separate action. Requests and votes remain attached to their event. Archived events retain their history. Dates on manual events are labels. Planner-linked events open and close on their saved booking window. The DJ can pause or resume them without clearing the queue.
+The guest page and DJ queue refresh every 12 seconds. **Activate** selects the event for the permanent QR and opens requests immediately. It takes the previous event off the QR without touching its queue. Use **Close Requests** to pause intake. Requests and votes remain attached to their event. Archived events retain their history. Dates on manual events are labels. Planner-linked events open and close on their saved booking window. The DJ can pause or resume them without clearing the queue.
 
 ## Files and data
 
