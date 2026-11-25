@@ -43,7 +43,29 @@ function trackIdentity(song, status) {
     const identity = el('div', 'track-identity');
     const info = songInfo(song);
     if (status) info.append(el('span', 'song-status '+status, status[0].toUpperCase()+status.slice(1)));
-    identity.append(musicTile(), info);
+    const tile = musicTile();
+    identity.append(tile, info);
+    // The search form uses notes. The public queue pairs each available cover with its track link.
+    if (status && /^https:\/\/[a-z0-9-]+\.mzstatic\.com\/image\//i.test(song.artwork_url)
+        && /^https:\/\/(music|itunes)\.apple\.com\//i.test(song.store_url)) {
+        const cover = el('img', 'queue-cover');
+        cover.alt = '';
+        cover.loading = 'lazy';
+        cover.width = cover.height = 52;
+        const link = el('a', 'store-badge');
+        link.href = song.store_url;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.setAttribute('aria-label', song.title+' by '+song.artist+' on the iTunes Store');
+        const badge = el('img');
+        badge.alt = 'iTunes Store';
+        badge.src = '/static/images/itunes-store-small.svg';
+        link.append(badge);
+        cover.addEventListener('error', () => { cover.replaceWith(tile); link.remove(); }, {once:true});
+        tile.replaceWith(cover);
+        identity.append(link);
+        cover.src = song.artwork_url;
+    }
     return identity;
 }
 
@@ -135,6 +157,8 @@ function renderSongs() {
         const status = b.dataset.filter;
         b.textContent = status[0].toUpperCase()+status.slice(1)+' ('+songs.filter(s => s.status === status).length+')';
     }
+    const descriptions = {pending:'Popular requests awaiting DJ approval.', accepted:'Requests the DJ has accepted.', played:'Songs the DJ has played.'};
+    $('queue-description').textContent = descriptions[filter];
     const list = $('requests-list');
     list.replaceChildren();
     if (!items.length) list.append(el('p','empty',query ? 'No matching requests.' : 'No '+filter+' requests yet.'));
@@ -145,7 +169,7 @@ function renderSongs() {
         for (const direction of [1,-1]) {
             if (direction === -1) votes.append(el('span','number',song.votes));
             if (board.state !== 'open' || song.status === 'played') continue;
-            const button = el('button','btn icon-button');
+            const button = el('button','btn icon-button '+(direction === 1 ? 'vote-up' : 'vote-down'));
             button.append(interfaceIcon(direction === 1 ? 'thumb-up' : 'thumb-down'));
             button.type = 'button';
             button.setAttribute('aria-label',(direction === 1 ? 'Upvote ' : 'Downvote ')+song.title);
@@ -184,6 +208,8 @@ function renderLinks() {
     ];
     const box = $('guest-link-buttons');
     const custom = $('custom-link-buttons');
+    const booking = $('booking-link');
+    booking.replaceChildren();
     box.replaceChildren();
     custom.replaceChildren();
     for (const item of items) {
@@ -195,11 +221,23 @@ function renderLinks() {
         const link = el('a', 'btn'+(item.icon === 'booking' ? ' primary' : ''));
         link.href = url.href;
         if (url.protocol === 'https:') { link.target = '_blank'; link.rel = 'noopener noreferrer'; }
-        link.append(interfaceIcon(icon),document.createTextNode(item.label));
-        (item.icon ? box : custom).append(link);
+        link.append(interfaceIcon(icon));
+        if (item.icon === 'booking') {
+            link.append(document.createTextNode(item.label));
+            booking.append(link);
+        } else if (item.icon) {
+            link.append(document.createTextNode(item.label));
+            box.append(link);
+        } else {
+            link.title = item.label;
+            link.setAttribute('aria-label', item.label);
+            // Keep user-defined labels visible when a generic icon cannot identify the destination.
+            if (!platform && url.protocol === 'https:') link.append(document.createTextNode(item.label));
+            custom.append(link);
+        }
     }
     show('social-links',custom.childElementCount > 0);
-    show('external-links',box.childElementCount + custom.childElementCount > 0);
+    show('external-links',booking.childElementCount + box.childElementCount + custom.childElementCount > 0);
 }
 function render() {
     const event = board.event;
@@ -210,10 +248,14 @@ function render() {
     updateSubmit();
     show('queue',Boolean(event));
     $('event-name').textContent = event?.name || 'Song requests';
-    $('state').className = 'badge '+(open ? 'open' : 'closed');
-    $('state').textContent = open ? '● Requests open' : 'Requests closed';
+    $('state').className = 'request-state '+(open ? 'open' : 'closed');
+    $('state').textContent = open ? 'Now accepting requests' : 'Requests closed';
     $('intro').textContent = open ? 'Request a song, vote for a favorite, or see what the DJ has played.' : event ? 'Requests are closed. Thanks for joining us.' : 'Check back when the event begins.';
-    $('presence').textContent = event ? board.active_guests+' active guest'+(board.active_guests === 1 ? '' : 's') : '';
+    show('presence', Boolean(event));
+    if (event) {
+        $('presence-count').textContent = board.active_guests+' active';
+        $('presence').setAttribute('aria-label', board.active_guests+' active guest'+(board.active_guests === 1 ? '' : 's'));
+    }
     const genres = event?.genres || [];
     show('vibe', genres.length > 0);
     if (genres.length) {

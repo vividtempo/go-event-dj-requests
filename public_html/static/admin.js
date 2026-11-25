@@ -43,7 +43,7 @@ async function loadQueue() {
     const live = event?.is_active && event.requests_open;
     const state = $('queue-state');
     state.className = 'badge '+(live ? 'open' : 'closed');
-    state.textContent = live ? 'Live · Requests open' : event?.archived ? 'Archived' : 'Requests closed';
+    state.textContent = live ? 'Live' : event?.archived ? 'Archived' : 'Requests closed';
     renderActive();
     songs = data.requests;
     renderStats(data.active_guests);
@@ -94,7 +94,8 @@ function renderQueue() {
         const tools = node('div', 'queue-tools');
         const votes = node('span', 'vote-score', song.votes);
         votes.setAttribute('aria-label', song.votes+' net votes');
-        votes.prepend(interfaceIcon('thumb-up'));
+        votes.prepend(interfaceIcon('arrow-up'));
+        if (song.votes < 0) votes.classList.add('negative');
         tools.append(votes, copySongButton(song));
 
         const actions = node('div', 'actions');
