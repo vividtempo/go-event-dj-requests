@@ -1,4 +1,5 @@
 CREATE TABLE IF NOT EXISTS events (
+ genres TEXT NULL,
  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
  name VARCHAR(120) NOT NULL,
  event_date VARCHAR(10) NOT NULL DEFAULT '',
@@ -10,6 +11,9 @@ CREATE TABLE IF NOT EXISTS events (
  INDEX idx_events_active (is_active,archived)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE IF NOT EXISTS requests (
+ requester_name VARCHAR(80) NOT NULL DEFAULT '',
+ artwork_url VARCHAR(500) NOT NULL DEFAULT '',
+ store_url VARCHAR(500) NOT NULL DEFAULT '',
  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
  event_id BIGINT UNSIGNED NOT NULL,
  title VARCHAR(120) NOT NULL,
@@ -17,13 +21,14 @@ CREATE TABLE IF NOT EXISTS requests (
  note VARCHAR(240) NOT NULL DEFAULT '',
  norm_title VARCHAR(255) NOT NULL,
  norm_artist VARCHAR(255) NOT NULL,
- status ENUM('pending','played','skipped') NOT NULL DEFAULT 'pending',
+ status ENUM('pending','played','skipped','accepted','declined') NOT NULL DEFAULT 'pending',
  created_at BIGINT UNSIGNED NOT NULL,
  UNIQUE KEY uniq_song (event_id,norm_title,norm_artist),
  INDEX idx_event_status (event_id,status,created_at),
  CONSTRAINT fk_requests_events FOREIGN KEY(event_id) REFERENCES events(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE IF NOT EXISTS votes (
+ direction TINYINT NOT NULL DEFAULT 1,
  request_id BIGINT UNSIGNED NOT NULL,
  voter_key CHAR(64) NOT NULL,
  created_at BIGINT UNSIGNED NOT NULL,
@@ -43,6 +48,8 @@ CREATE TABLE IF NOT EXISTS admin_sessions (
  expires_at BIGINT UNSIGNED NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE IF NOT EXISTS settings (
+ booking_url VARCHAR(500) NOT NULL DEFAULT '',
+ contact_url VARCHAR(500) NOT NULL DEFAULT '',
  id INT PRIMARY KEY,
  tip_url VARCHAR(500) NOT NULL DEFAULT '',
  review_url VARCHAR(500) NOT NULL DEFAULT ''
@@ -61,4 +68,12 @@ CREATE TABLE IF NOT EXISTS automation_event_links (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE TABLE IF NOT EXISTS guest_links (
  position INT PRIMARY KEY, label VARCHAR(40) NOT NULL, url VARCHAR(500) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS guest_presence (
+ event_id BIGINT UNSIGNED NOT NULL,
+ guest_key CHAR(64) NOT NULL,
+ last_seen BIGINT UNSIGNED NOT NULL,
+ PRIMARY KEY (event_id,guest_key),
+ INDEX idx_presence_seen (last_seen),
+ CONSTRAINT fk_presence_event FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

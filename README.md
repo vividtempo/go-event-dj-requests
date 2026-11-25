@@ -36,15 +36,19 @@ The extracted source is stored at the repository root, preserving `public_html/`
 7. Verify SSL/HTTPS and the application URL. Visit `/requests` (shows a closed state initially) and `/admin` (DJ login). Sign in with the password you configured, create a test event, Activate, then Open Requests. Use a second browser/device to submit songs. Confirm votes, duplicate behavior, mark played/skip, close, and archive. Then open `/qr` while signed in.
 8. When ready, map `requests.goeventdj.com` in **Domain Management**, configure SSL, update `base_url` in `private/config.php` to that HTTPS URL, then print the permanent QR sign.
 
+## Upgrading an existing installation
+
+In the Cloudways Database Manager, run `migrations/001-guest-experience.sql` on the song request database before deploying this version. It preserves previous votes and links, and maps skipped requests to Declined. It can be rerun after an interruption. New installations can import the current `schema.sql` directly. Deploy the song request app before the matching planner update. For an already linked event, **Sync and Schedule** imports its existing genre selections.
+
 ## Behavior
 
-- Public requests and voting are scoped to the currently active, open event; clients don't see event history or DJ notes.
-- One browser cookie can vote once per song. A determined user can reset cookies; this is not a verified identity system.
+- Guests can see pending, accepted, and played songs for the current event. A paused event keeps its board visible. Declined songs, names, and dedications are private to the DJ.
+- A browser can set one upvote or downvote per song and change its choice while voting is open. A determined user can reset cookies; this is not a verified identity system.
 - DJ login is password-based with 8-hour HttpOnly session and CSRF protection. A request-rate limiter applies to logins, submissions and votes. Strong password and HTTPS are mandatory.
 - Requests are stored persistently in MySQL. An event may be closed or archived without deleting its history.
 - Guest queue refresh: 12 seconds. DJ dashboard refresh: 12 seconds. No music playback or streaming.
 - The QR image uses an external HTTPS QR generation service (`api.qrserver.com`), which sees the public request URL. Replace it with server-side generated QR later if that is undesirable.
-- Tip and review URLs require HTTPS and are configured under DJ settings.
+- Booking, contact, review, and tip buttons appear when a URL is saved in DJ Settings. The existing five custom link slots remain available.
 
 ## Cloudways note
 
@@ -56,7 +60,7 @@ This deliverable was syntax-checked with PHP CLI and source asset checks. It was
 
 ## Brand assets
 
-Guest, DJ, and QR pages match the website's Montserrat typography, navy #010E3B, red #D8315B, and blue #1955BD. The original SVG remains the static fallback. CSS displays it and the supplied spinning Lottie logo in white without a background. Printed QR signs use the original dark SVG on white paper.
+Guest and DJ pages use self-hosted Inter on flat navy surfaces with restrained rose accents. The printed QR sign retains Montserrat. The original SVG remains the static fallback. CSS displays it and the supplied spinning Lottie logo in white without a background. Printed QR signs use the original dark SVG on white paper.
 
 The self-hosted Lottie light SVG player v5.13.0 animates `go-event-dj-logo.json`; no CDN or external animation request is needed. Reduced-motion preferences use the static logo, and animation pauses in hidden tabs. Montserrat Latin variable font is self-hosted. Licenses accompany the player in `static/vendor/lottie-LICENSE.md` and font in `static/fonts/OFL.txt`. The browser icon is `favicon-96x96.png`.
 

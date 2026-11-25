@@ -1,0 +1,107 @@
+<?php
+declare(strict_types=1);
+if (!function_exists('sql')) { http_response_code(404); exit; }
+
+function count_active_guests(int $eventId): int {
+    return (int)sql('SELECT COUNT(*) FROM guest_presence WHERE event_id=? AND last_seen>=?', [$eventId,time()-60])->fetchColumn();
+}
+
+function queue_rows(int $eventId, ?string $voter=null): array {
+    $public=$voter!==null;
+    $fields=$public ? 'COALESCE((SELECT direction FROM votes WHERE request_id=r.id AND voter_key=?),0) AS my_vote' : 'r.event_id,r.note,r.requester_name';
+    $visible=$public ? " AND r.status IN ('pending','accepted','played')" : '';
+    $rows=sql("SELECT r.id,r.title,r.artist,r.status,r.created_at,r.artwork_url,r.store_url,$fields,
+        COALESCE((SELECT SUM(direction) FROM votes WHERE request_id=r.id),0) AS votes
+        FROM requests r WHERE r.event_id=? $visible ORDER BY votes DESC,r.created_at DESC,r.id DESC",
+        $public ? [$voter,$eventId] : [$eventId])->fetchAll();
+    foreach ($rows as &$row) {
+        foreach (['id','created_at','votes'] as $key) $row[$key]=(int)$row[$key];
+        if ($public) {
+            $row['my_vote']=(int)$row['my_vote'];
+            $row['voted']=$row['my_vote']!==0;
+        } else {
+            $row['event_id']=(int)$row['event_id'];
+            if ($row['status']==='skipped') $row['status']='declined';
+        }
+    }
+    return $rows;
+}
+
+function request_board(): array {
+    $guest=guest();
+    $event=active();
+    $links=links();
+    if (!$event) return ['state'=>'none','links'=>$links];
+    $id=(int)$event['id'];
+    // Each visible guest page polls. Tabs in the same browser share a single row.
+    sql('INSERT INTO guest_presence(event_id,guest_key,last_seen) VALUES(?,?,?) ON DUPLICATE KEY UPDATE last_seen=?', [$id,$guest,time(),time()]);
+    sql('DELETE FROM guest_presence WHERE last_seen<?', [time()-300]);
+    return [
+        'state'=>$event['requests_open']?'open':'closed',
+        'event'=>['id'=>$id,'name'=>$event['name'],'genres'=>json_decode($event['genres']??'[]',true)?:[],
+            'timezone'=>$event['timezone']??'America/Chicago'],
+        'active_guests'=>count_active_guests($id),'links'=>$links,'requests'=>queue_rows($id,$guest)
+    ];
+}
+
+function submit_request(array $data): array {
+    if (!empty($data['website'])) return ['ok'=>true];
+    $title=clean($data['title']??null,120);
+    $artist=clean($data['artist']??null,120);
+    $name=clean($data['requester_name']??'',80,false);
+    $note=clean($data['note']??'',240,false);
+    $art=$store='';
+    if (isset($data['catalog'])) {
+        $track=$data['catalog'];
+        if (!is_array($track) || !is_string($track['signature']??null) ||
+            !is_string($track['artwork_url']??null) || !is_string($track['store_url']??null) ||
+            !is_string($track['title']??null) || !is_string($track['artist']??null) ||
+            !hash_equals(catalog_signature($track),$track['signature']) ||
+            clean($track['title'],120)!==$title || clean($track['artist'],120)!==$artist) err(400,'Select the song again.');
+        $art=$track['artwork_url'];
+        $store=$track['store_url'];
+    }
+    $guest=guest();
+    return tx(function() use($guest,$title,$artist,$name,$note,$art,$store,$data){
+        rate($guest,'submit',6,600);
+        rate(iphash(),'ip_submit',400,600);
+        $event=active();
+        if (!$event || !$event['requests_open']) err(409,'Requests are currently closed.');
+        $id=(int)$event['id'];
+        $expected=$data['event_id']??null;
+        if (($expected!==null && $expected!==$id) || ($expected===null && isset($event['opens_at']))) err(409,'The event has changed. Refresh and try again.');
+        // Serialize duplicate submissions for this event before reading the unique song key or cap.
+        sql('SELECT id FROM events WHERE id=? FOR UPDATE',[$id]);
+        $song=sql('SELECT id,status FROM requests WHERE event_id=? AND norm_title=? AND norm_artist=? FOR UPDATE',[$id,norm($title),norm($artist)])->fetch();
+        if ($song) {
+            if (in_array($song['status'],['skipped','declined'],true)) return ['ok'=>true];
+            $voted=false;
+            if ($song['status']!=='played') {
+                $voted=sql('INSERT IGNORE INTO votes(request_id,voter_key,created_at) VALUES(?,?,?)',[$song['id'],$guest,time()])->rowCount()>0;
+            }
+            return ['ok'=>true,'duplicate'=>true,'status'=>$song['status'],'voted'=>$voted];
+        }
+        if ((int)sql('SELECT COUNT(*) FROM requests WHERE event_id=? FOR UPDATE',[$id])->fetchColumn()>=500) err(409,'Request list is full.');
+        sql('INSERT INTO requests(event_id,title,artist,requester_name,note,artwork_url,store_url,norm_title,norm_artist,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)',
+            [$id,$title,$artist,$name,$note,$art,$store,norm($title),norm($artist),time()]);
+        $requestId=(int)db()->lastInsertId();
+        sql('INSERT INTO votes(request_id,voter_key,created_at) VALUES(?,?,?)',[$requestId,$guest,time()]);
+        return ['ok'=>true,'duplicate'=>false,'request_id'=>$requestId];
+    });
+}
+
+function record_vote(int $requestId,array $data): array {
+    $direction=$data['direction']??1;
+    if (!in_array($direction,[-1,1],true)) err(400,'Choose an upvote or a downvote.');
+    $guest=guest();
+    return tx(function() use($requestId,$guest,$direction){
+        rate($guest,'vote',30,600);
+        rate(iphash(),'ip_vote',1000,600);
+        $event=active();
+        if (!$event || !$event['requests_open']) err(409,'Requests are closed.');
+        if (!sql("SELECT id FROM requests WHERE id=? AND event_id=? AND status IN ('pending','accepted') FOR UPDATE",[$requestId,$event['id']])->fetch()) err(404,'Song unavailable.');
+        $saved=sql('INSERT INTO votes(request_id,voter_key,created_at,direction) VALUES(?,?,?,?) ON DUPLICATE KEY UPDATE direction=?',
+            [$requestId,$guest,time(),$direction,$direction]);
+        return ['ok'=>true,'voted'=>$saved->rowCount()>0,'my_vote'=>$direction];
+    });
+}

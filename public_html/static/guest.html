@@ -1,1 +1,66 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#010e3b"><title>Song Requests | Go Event DJ</title><link rel="stylesheet" href="/static/style.css?v=api1"><script defer src="/static/guest.js?v=planner-schedule1"></script><link rel="icon" type="image/png" sizes="96x96" href="/static/images/favicon-96x96.png"><script defer src="/static/vendor/lottie_light.min.js"></script><script defer src="/static/brand.js?v=brand2"></script></head><body><main class="shell narrow"><div class="top"><a href="/requests" class="brand brand-lockup"><span class="brand-logo-frame"><img class="brand-logo" src="/static/images/go-event-dj-logo.svg" alt="Go Event DJ" width="451" height="161"><span class="brand-animation" aria-hidden="true"></span></span><small>THE SOUNDTRACK TO YOUR EVENT</small></a><nav><a href="/admin">DJ login</a></nav></div><div id="flash" class="hidden" role="status" aria-live="polite"></div><div id="loading" class="panel">Loading event requests…</div><div id="closed" class="hidden stack"><section class="panel hero"><div class="eyebrow">GO EVENT DJ</div><h1 id="closed-title">Song requests</h1><p class="muted" id="closed-description">Requests aren't open right now. Check back during the event.</p></section></div><div id="open" class="hidden stack"><section class="panel hero"><div class="row wrap"><div><div class="eyebrow">Now accepting requests</div><h1 id="event-name"></h1></div><span class="badge open">● REQUESTS OPEN</span></div><p class="muted small">Suggest a song or vote for one already requested. Requests are suggestions and aren't guaranteed to play.</p></section><section class="panel"><h2>Request a song</h2><form id="request-form" class="stack"><div class="field"><label for="title">Song title</label><input id="title" name="title" maxlength="120" autocomplete="off" placeholder="Song title" required></div><div class="field"><label for="artist">Artist</label><input id="artist" name="artist" maxlength="120" autocomplete="off" placeholder="Artist name" required></div><div class="field"><label for="note">Note to the DJ (optional)</label><input id="note" name="note" maxlength="240" placeholder="Dedication or message to the DJ"></div><div class="hidden"><label for="website">Website</label><input id="website" name="website" autocomplete="off" tabindex="-1"></div><button type="submit" id="submit-btn" class="btn primary full">Send Song Request</button></form></section><section class="panel"><div class="section-title"><div><h2>Guest favorites</h2><p class="muted tiny">Vote for songs you want to hear</p></div><span class="badge" id="request-count">0 songs</span></div><input id="search" class="find" placeholder="Search requests" aria-label="Search current requests"><div id="requests-list"></div></section></div><section class="panel hidden" id="external-links" style="margin-top:16px"><h2>Connect with Go Event DJ</h2><div class="tiprow" id="guest-link-buttons"><a class="btn" id="tip-link" target="_blank" rel="noopener noreferrer">♡ Leave a tip</a><a class="btn" id="review-link" target="_blank" rel="noopener noreferrer">☆ Leave a review</a></div></section><footer class="footer">GO EVENT DJ · Music requests subject to DJ discretion</footer></main></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1528">
+  <title>Song Requests | Go Event DJ</title>
+  <link rel="icon" href="/static/images/favicon-96x96.png">
+  <link rel="stylesheet" href="/static/style.css?v=guest-v3">
+  <script defer src="/static/vendor/lottie_light.min.js"></script>
+  <script defer src="/static/brand.js?v=brand2"></script>
+  <script defer src="/static/guest.js?v=guest-v3"></script>
+</head>
+<body>
+<main class="shell narrow guest-board">
+<div class="top"><a href="/requests" class="brand brand-lockup"><span class="brand-logo-frame"><img class="brand-logo" src="/static/images/go-event-dj-logo.svg" alt="Go Event DJ" width="451" height="161"><span class="brand-animation" aria-hidden="true"></span></span><small>THE SOUNDTRACK TO YOUR EVENT</small></a><nav><a href="/admin">DJ login</a></nav></div>
+  <div id="flash" class="hidden" role="status" aria-live="polite"></div>
+  <div id="loading" class="panel">Loading event requests…</div>
+  <div id="board" class="hidden stack">
+    <header class="panel hero">
+      <div class="row wrap"><span class="badge" id="state"></span><span class="muted small" id="presence"></span></div>
+      <h1 id="event-name" class="space-top">Song requests</h1>
+      <p class="muted small" id="intro"></p>
+      <div class="vibe hidden" id="vibe"><h2 id="vibe-title">Today's music vibe</h2><div class="genre-tags" id="genres"></div></div>
+    </header>
+    <section id="entry" class="panel hidden">
+      <h2>Request a song</h2>
+      <form id="request-form" class="stack">
+        <div id="catalog-entry" class="stack">
+          <div class="field"><label for="lookup">Song or artist</label><input type="search" id="lookup" maxlength="120" autocomplete="off" placeholder="Search by song or artist"></div>
+          <div id="search-hint" class="muted small" role="status"></div>
+          <div class="suggestions" id="suggestions"></div>
+          <div class="hidden" id="selection"></div>
+        </div>
+        <div id="manual-entry" class="hidden grid two">
+          <div class="field"><label for="title">Song title</label><input id="title" maxlength="120" autocomplete="off"></div>
+          <div class="field"><label for="artist">Artist</label><input id="artist" maxlength="120" autocomplete="off"></div>
+        </div>
+        <button type="button" class="text-action" id="manual-toggle">Enter song manually</button>
+        <details><summary>Add your name or a dedication <span class="muted">(optional)</span></summary>
+          <div class="stack space-top"><div class="field"><label for="requester">Your name</label><input id="requester" maxlength="80" autocomplete="given-name"></div>
+          <div class="field"><label for="note">Dedication or note to the DJ</label><input id="note" maxlength="240"></div></div>
+        </details>
+        <div class="hidden"><label for="website">Website</label><input id="website" tabindex="-1" autocomplete="off"></div>
+        <button class="btn primary full" id="submit-btn">Send song request</button>
+      </form>
+    </section>
+    <section id="queue" class="panel hidden">
+      <div class="section-title"><h2>Guest requests</h2><span class="badge" id="request-count"></span></div>
+      <div class="tabbar queue-tabs" aria-label="Filter guest requests">
+        <button class="btn small active" type="button" data-filter="pending" aria-pressed="true">Pending</button>
+        <button class="btn small" type="button" data-filter="accepted" aria-pressed="false">Accepted</button>
+        <button class="btn small" type="button" data-filter="played" aria-pressed="false">Played</button>
+      </div>
+      <input type="search" id="search" class="find" aria-label="Filter guest requests by song or artist" placeholder="Find a request">
+      <div id="requests-list"></div>
+    </section>
+    <section class="panel hidden" id="external-links"><h2>Enjoying the experience?</h2>
+      <p class="muted connection-copy">Bring Go Event DJ to your next celebration.</p>
+      <div class="tiprow" id="guest-link-buttons"></div>
+      <div id="social-links" class="hidden"><h3>Connect with us</h3><div class="tiprow" id="custom-link-buttons"></div></div></section>
+  </div>
+  <footer class="footer">GO EVENT DJ · Music requests subject to DJ discretion</footer>
+</main>
+</body>
+</html>
