@@ -40,6 +40,10 @@ function automation_fields(array $data, bool $creating): array {
 function automation_event(int $id): array {
     $event = sql('SELECT e.*, l.external_id FROM events e LEFT JOIN automation_event_links l ON l.event_id=e.id WHERE e.id=?', [$id])->fetch();
     if (!$event) err(404, 'Event not found.');
+    if (request_schedule_available()) {
+        $schedule=sql('SELECT opens_at,closes_at,timezone FROM planner_request_schedule WHERE event_id=?',[$id])->fetch();
+        if ($schedule) $event+=$schedule;
+    }
     foreach (['id', 'created_at'] as $key) $event[$key] = (int)$event[$key];
     foreach (['is_active', 'requests_open', 'archived'] as $key) $event[$key] = (bool)$event[$key];
     $event['date'] = $event['event_date'];
@@ -79,6 +83,27 @@ if (str_starts_with($path, '/api/v1/')) {
     $stored = sql('SELECT token_hash FROM automation_settings WHERE id=1')->fetchColumn();
     if (!$stored || !hash_equals($stored, hash('sha256', $key))) err(401, 'Invalid or revoked API key.');
     rate(hash('sha256', $key), 'automation', 120, 60);
+    if ($path === '/api/v1/events/planner-sync') {
+        if ($method!=='POST') err(405,'Method not allowed.');
+        $data=input();
+        $external=$data['external_id']??null;
+        if (!is_string($external)||!preg_match('/^planner:[a-f0-9]{32}$/D',$external)) err(400,'A planner booking ID is required.');
+        $target=$data['target_event_id']??null;
+        if ($target!==null&&(!is_int($target)||$target<1)) err(400,'Invalid existing request event ID.');
+        $window=validate_planner_schedule($data);
+        unset($data['target_event_id'],$data['opens_at'],$data['closes_at'],$data['timezone'],$data['source_revision']);
+        $fields=automation_fields($data,true);
+        if (($fields['event_date']??'')===''&&$window[0]!==0) err(400,'Event date is required.');
+        $fields+=['event_date'=>'','venue'=>''];
+        request_schedule_schema();
+        $result=tx(function() use ($external,$target,$fields,$window,$key) {
+            $stored=sql('SELECT token_hash FROM automation_settings WHERE id=1 FOR UPDATE')->fetchColumn();
+            if (!$stored||!hash_equals($stored,hash('sha256',$key))) err(401,'Invalid or revoked API key.');
+            return upsert_planner_schedule($external,$target,$fields,$window);
+        });
+        http_response_code($result['created']?201:200);
+        out($result);
+    }
     $match = [];
     $single = preg_match('#^/api/v1/events/([1-9][0-9]*)$#', $path, $match);
     if ($path !== '/api/v1/events' && !$single) err(404, 'API endpoint not found.');
