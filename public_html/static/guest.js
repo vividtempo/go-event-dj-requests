@@ -45,13 +45,12 @@ function trackIdentity(song, status) {
     if (status) info.append(el('span', 'song-status '+status, status[0].toUpperCase()+status.slice(1)));
     const tile = musicTile();
     identity.append(tile, info);
-    // The search form uses notes. The public queue pairs each available cover with its track link.
-    if (status && /^https:\/\/[a-z0-9-]+\.mzstatic\.com\/image\//i.test(song.artwork_url)
+    if (/^https:\/\/[a-z0-9-]+\.mzstatic\.com\/image\//i.test(song.artwork_url)
         && /^https:\/\/(music|itunes)\.apple\.com\//i.test(song.store_url)) {
-        const cover = el('img', 'queue-cover');
+        const cover = el('img', 'track-cover');
         cover.alt = '';
         cover.loading = 'lazy';
-        cover.width = cover.height = 52;
+        cover.width = cover.height = 64;
         const link = el('a', 'store-badge');
         link.href = song.store_url;
         link.target = '_blank';
@@ -123,11 +122,13 @@ $('lookup').addEventListener('input', () => {
             if (controller.signal.aborted) return;
             $('search-hint').textContent = songs.length ? '' : 'No matches. You can enter the song manually.';
             for (const song of songs) {
-                const row = el('button', 'search-result');
-                row.type = 'button';
-                row.setAttribute('aria-label', 'Choose '+song.title+' by '+song.artist);
-                row.addEventListener('click', () => choose(song));
-                row.append(musicTile(), songInfo(song), interfaceIcon('plus'));
+                const row = el('div', 'search-result');
+                const button = el('button', 'choose-song');
+                button.type = 'button';
+                button.setAttribute('aria-label', 'Choose '+song.title+' by '+song.artist);
+                button.append(interfaceIcon('plus'));
+                button.addEventListener('click', () => choose(song));
+                row.append(trackIdentity(song), button);
                 $('suggestions').append(row);
             }
         } catch {
