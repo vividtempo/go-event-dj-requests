@@ -174,7 +174,9 @@ for(let i=0;i<6;i++) full.push((await sendSong('Guest A '+i,alice,'',fairId)).da
 const single=(await sendSong('Cupid',bob,'',fairId)).data.request_id;
 const aPair=[];
 for(let i=0;i<2;i++) aPair.push((await sendSong('Guest C '+i,'3'.repeat(64),'',fairId)).data.request_id);
-assert.equal((await sendSong('Over limit',alice,'',fairId)).status,429);
+const cooldown=await sendSong('Over limit',alice,'',fairId);
+assert.equal(cooldown.status,429);
+assert.equal(cooldown.data.detail,'Easy there, DJ! Give the booth a breather and let a few other guests pick a song. Try again in a bit.');
 assert.equal((await sendSong('Cupid',alice,'',fairId)).data.duplicate,true);
 await req('/api/requests/'+full[5]+'/vote','POST',{direction:1},guestHeaders);
 await req('/api/requests/'+full[5]+'/vote','POST',{direction:1},{Cookie:'dj_guest_id='+'4'.repeat(64)});
@@ -197,7 +199,7 @@ assert.equal((await edit(fairId,{song_limit:1},{Cookie:''})).status,401);
 assert.equal((await edit(fairId,{song_limit:1},{'X-CSRF-Token':'wrong'})).status,403);
 assert.equal((await edit(fairId,{song_limit:7,window_minutes:1,name:'Extended show',venue:'New hall',date:'2026-11-26'})).status,200);
 assert.equal((await sendSong('Seventh',alice,'',fairId)).status,200);
-assert.equal((await sendSong('Eighth',alice,'',fairId)).status,429);
+assert.deepEqual(await sendSong('Eighth',alice,'',fairId),cooldown);
 // Move the seven songs outside this event's new rolling window.
 await php.run({code:'<?php '+mockDb+' db()->exec("UPDATE requests SET created_at=created_at-61 WHERE event_id='+fairId+'");'});
 assert.equal((await sendSong('New minute',alice,'',fairId)).status,200);

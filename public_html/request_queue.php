@@ -140,8 +140,7 @@ function submit_request(array $data): array {
         $minutes=$event['window_minutes'];
         $recent=(int)sql('SELECT COUNT(*) FROM requests r JOIN request_submitters s ON s.request_id=r.id
             WHERE r.event_id=? AND s.guest_key=? AND r.created_at>?',[$id,$guest,time()-60*$minutes])->fetchColumn();
-        if ($recent >= $limit) err(429, sprintf('You can request %d %s every %d %s at this event. Try again later.',
-            $limit,$limit===1?'song':'songs',$minutes,$minutes===1?'minute':'minutes'));
+        if ($recent >= $limit) err(429, 'Easy there, DJ! Give the booth a breather and let a few other guests pick a song. Try again in a bit.');
         if ((int)sql('SELECT COUNT(*) FROM requests WHERE event_id=? FOR UPDATE',[$id])->fetchColumn()>=500) err(409,'Request list is full.');
         sql('INSERT INTO requests(event_id,title,artist,requester_name,note,artwork_url,store_url,norm_title,norm_artist,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)',
             [$id,$title,$artist,$name,$note,$art,$store,norm($title),norm($artist),time()]);
