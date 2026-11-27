@@ -10,7 +10,7 @@ const {getPHPLoaderModule}=await import(pathToFileURL(resolve(runtime,'@php-wasm
 const php=new PHP(await loadPHPRuntime(await getPHPLoaderModule('8.3'),{processId:7}));
 const read=(p)=>readFileSync(new URL('../public_html/'+p,import.meta.url),'utf8');
 php.mkdir('/app');
-for(const f of ['schedule.php','automation.php','catalog.php','request_queue.php'])php.writeFile('/app/'+f,read(f));
+for(const f of ['event_controls.php','schedule.php','automation.php','catalog.php','request_queue.php'])php.writeFile('/app/'+f,read(f));
 php.writeFile('/app/guest_links.php','<?php function guest_links():array{return [];}');
 const mockDb="function db():PDO{static $db;if(!$db)$db=new PDO('sqlite:/app/fixture.db',null,null,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);return $db;}";
 const index=read('index.php').replace(/^function db\(\):PDO[^\n]+/m,mockDb).replace("function sql(string $q,array $args=[]):PDOStatement{","function sql(string $q,array $args=[]):PDOStatement{\$q=str_replace([' FOR UPDATE','INSERT IGNORE','ON DUPLICATE KEY UPDATE last_seen=?','ON DUPLICATE KEY UPDATE direction=?'],['','INSERT OR IGNORE','ON CONFLICT(event_id,guest_key) DO UPDATE SET last_seen=?','ON CONFLICT(request_id,voter_key) DO UPDATE SET direction=? WHERE direction<>excluded.direction'],\$q);");
@@ -27,6 +27,7 @@ $db->exec("CREATE TABLE events(id INTEGER PRIMARY KEY,name TEXT,event_date TEXT,
 CREATE TABLE automation_settings(id INTEGER PRIMARY KEY,token_hash TEXT);
 CREATE TABLE automation_event_links(external_id TEXT PRIMARY KEY,event_id INTEGER UNIQUE);
 CREATE TABLE planner_request_schedule(event_id INTEGER PRIMARY KEY,opens_at INTEGER DEFAULT 0,closes_at INTEGER DEFAULT 0,timezone TEXT,source_revision INTEGER,paused INTEGER DEFAULT 0);
+CREATE TABLE request_event_controls(event_id INTEGER PRIMARY KEY,overrides_json TEXT,song_limit INTEGER DEFAULT 6,window_minutes INTEGER DEFAULT 10,manual_paused INTEGER DEFAULT 0);
 CREATE TABLE rate_events(id INTEGER PRIMARY KEY,actor_hash TEXT,action TEXT,created_at INTEGER);
 CREATE TABLE admin_sessions(token_hash TEXT,csrf_token TEXT,expires_at INTEGER);
 CREATE TABLE settings(id INTEGER,tip_url TEXT,review_url TEXT,booking_url TEXT,contact_url TEXT);
@@ -162,5 +163,82 @@ const another=await sendSong('Another Event',alice,'Sam',otherManual.data.id);
 assert.equal(another.status,200);
 const otherRow=(await req('/api/admin/events/'+otherManual.data.id+'/requests')).data.requests.find(row=>row.id===another.data.request_id);
 assert.deepEqual([otherRow.guest_number,otherRow.request_number,otherRow.request_total],[1,1,1]);
+// Sam's queue: same guest submitted six songs. A second vote always outranks requester activity.
+const edit=(id,data,headers)=>req('/api/admin/events/'+id+'/edit','POST',data,headers);
+const eventById=async id=>(await req('/api/admin/events')).data.events.find(e=>e.id===id);
+const newEvent=await req('/api/admin/events','POST',{name:'Fairness test',song_limit:6,window_minutes:10});
+const fairId=newEvent.data.id;
+await req('/api/admin/events/'+fairId+'/action','POST',{action:'activate'});
+const full=[];
+for(let i=0;i<6;i++) full.push((await sendSong('Guest A '+i,alice,'',fairId)).data.request_id);
+const single=(await sendSong('Cupid',bob,'',fairId)).data.request_id;
+const aPair=[];
+for(let i=0;i<2;i++) aPair.push((await sendSong('Guest C '+i,'3'.repeat(64),'',fairId)).data.request_id);
+assert.equal((await sendSong('Over limit',alice,'',fairId)).status,429);
+assert.equal((await sendSong('Cupid',alice,'',fairId)).data.duplicate,true);
+await req('/api/requests/'+full[5]+'/vote','POST',{direction:1},guestHeaders);
+await req('/api/requests/'+full[5]+'/vote','POST',{direction:1},{Cookie:'dj_guest_id='+'4'.repeat(64)});
+await req('/api/admin/requests/'+full[4]+'/status','POST',{status:'accepted'});
+const expectedRanks=[full[4],full[5],single,...aPair,...full.slice(0,4)];
+for (const url of ['/api/board','/api/admin/events/'+fairId+'/requests']) {
+    const rows=(await req(url)).data.requests;
+    assert.deepEqual(rows.map(row=>row.id),expectedRanks);
+    assert.equal(rows.find(row=>row.id===full[5]).votes,3);
+}
+// With all three pending songs at one vote, use totals (1, 2, 6) ahead of arrival time.
+await req('/api/requests/'+single+'/vote','POST',{direction:-1},{Cookie:'dj_guest_id='+alice});
+await req('/api/requests/'+single+'/vote','POST',{direction:1},guestHeaders);
+assert.equal((await req('/api/board')).data.requests.find(row=>row.id===single).votes,1);
+assert.deepEqual((await req('/api/board')).data.requests.map(row=>row.id),expectedRanks);
+
+assert.equal((await edit(fairId,{window_minutes:0,name:'Invalid save'})).status,400);
+assert.equal((await eventById(fairId)).name,'Fairness test');
+assert.equal((await edit(fairId,{song_limit:1},{Cookie:''})).status,401);
+assert.equal((await edit(fairId,{song_limit:1},{'X-CSRF-Token':'wrong'})).status,403);
+assert.equal((await edit(fairId,{song_limit:7,window_minutes:1,name:'Extended show',venue:'New hall',date:'2026-11-26'})).status,200);
+assert.equal((await sendSong('Seventh',alice,'',fairId)).status,200);
+assert.equal((await sendSong('Eighth',alice,'',fairId)).status,429);
+// Move the seven songs outside this event's new rolling window.
+await php.run({code:'<?php '+mockDb+' db()->exec("UPDATE requests SET created_at=created_at-61 WHERE event_id='+fairId+'");'});
+assert.equal((await sendSong('New minute',alice,'',fairId)).status,200);
+assert.equal((await req('/api/board')).data.event.name,'Extended show');
+assert.equal((await eventById(otherManual.data.id)).song_limit,6);
+assert.equal((await req('/api/admin/events','POST',{name:'Invalid limit',song_limit:0})).status,400);
+
+const march=await edit(fairId,{opens_at:'2027-03-14T02:30',closes_at:'2027-03-14T04:00'});
+assert.equal(march.status,400); // nonexistent local time during the spring clock change
+assert.equal((await edit(fairId,{opens_at:'2027-12-31T20:00',closes_at:'2027-12-31T23:59'})).status,200);
+let manual=await eventById(fairId);
+assert.equal(Number(manual.closes_at),Date.parse('2028-01-01T05:59:00Z')/1000);
+assert.equal((await edit(fairId,{action:'extend',previous_end:Number(manual.closes_at)})).status,200);
+assert.equal(Number((await eventById(fairId)).closes_at),Date.parse('2028-01-01T06:59:00Z')/1000);
+assert.equal((await edit(fairId,{opens_at:'',closes_at:''})).status,200);
+assert.equal((await eventById(fairId)).scheduled,false);
+await req('/api/admin/events/'+fairId+'/action','POST',{action:'deactivate'});
+
+// Extend a synced event across its original closing time. A repeated tap must not add another hour.
+const ended={...live,source_revision:6,opens_at:now-7200,closes_at:now-60};
+await sync(ended);
+assert.equal((await req('/api/board')).data.state,'none');
+assert.equal((await edit(7,{action:'extend',previous_end:ended.closes_at})).status,200);
+assert.equal((await edit(7,{action:'extend',previous_end:ended.closes_at})).status,409);
+assert.equal((await req('/api/board')).data.state,'open');
+await edit(7,{name:'Local DJ Name',window_minutes:12,song_limit:3});
+await sync({...ended,source_revision:7,name:'Planner Rename',venue:'Planner Ballroom'});
+const edited=await eventById(7);
+assert.deepEqual([edited.name,edited.venue,Number(edited.closes_at),edited.song_limit,edited.window_minutes],
+    ['Local DJ Name','Planner Ballroom',ended.closes_at+3600,3,12]);
+assert.equal((await req('/api/admin/events/7/action','POST',{action:'close'})).status,200);
+assert.equal((await req('/api/board')).data.state,'closed');
+await req('/api/admin/events/7/action','POST',{action:'open'});
+assert.equal((await req('/api/board')).data.state,'open');
+await sync({...ended,source_revision:8,opens_at:0,closes_at:0});
+assert.equal((await req('/api/board')).data.state,'none');
+await sync({...ended,source_revision:9,name:'Current Planner'});
+assert.equal((await req('/api/board')).data.event.name,'Local DJ Name');
+assert.equal((await edit(7,{action:'reset'})).status,200);
+const reset=await eventById(7);
+assert.deepEqual([reset.name,Number(reset.closes_at),reset.song_limit,reset.window_minutes],['Current Planner',ended.closes_at,3,12]);
+assert.equal((await req('/api/board')).data.state,'none');
 console.log('Requests schedule tests passed (SQLite adapter, production MySQL SQL requires deployment smoke test).');
 } finally { php.exit(); }

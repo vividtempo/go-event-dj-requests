@@ -44,18 +44,32 @@ function add_requester_counts(array &$rows): void {
 
 function queue_rows(int $eventId, ?string $voter=null): array {
     $public=$voter!==null;
-    if (!$public) ensure_request_submitters();
-    $join=$public ? '' : 'LEFT JOIN request_submitters submitter ON submitter.request_id=r.id';
-    $fields=$public ? 'COALESCE((SELECT direction FROM votes WHERE request_id=r.id AND voter_key=?),0) AS my_vote' : 'r.event_id,r.note,r.requester_name,submitter.guest_key';
-    $visible=$public ? " AND r.status IN ('pending','accepted','played')" : '';
-    $rows=sql("SELECT r.id,r.title,r.artist,r.status,r.created_at,r.artwork_url,r.store_url,$fields,
+    ensure_request_submitters();
+    $fields=$public ? 'COALESCE((SELECT direction FROM votes WHERE request_id=r.id AND voter_key=?),0) AS my_vote' : 'r.event_id,r.note,r.requester_name';
+    // Include the whole event when counting submissions, even songs already moderated.
+    $rows=sql("SELECT r.id,r.title,r.artist,r.status,r.created_at,r.artwork_url,r.store_url,submitter.guest_key,$fields,
         COALESCE((SELECT SUM(direction) FROM votes WHERE request_id=r.id),0) AS votes
-        FROM requests r $join WHERE r.event_id=? $visible ORDER BY votes DESC,r.created_at DESC,r.id DESC",
+        FROM requests r LEFT JOIN request_submitters submitter ON submitter.request_id=r.id WHERE r.event_id=?",
         $public ? [$voter,$eventId] : [$eventId])->fetchAll();
-    if (!$public) add_requester_counts($rows);
+    add_requester_counts($rows);
+    if ($public) $rows=array_filter($rows, fn($r)=>in_array($r['status'],['accepted','pending','played'],true));
+    $order=['accepted'=>0,'pending'=>1,'played'=>2];
+    usort($rows, static function($a,$b) use ($order) {
+        $group=($order[$a['status']] ?? 3) <=> ($order[$b['status']] ?? 3);
+        if ($group) return $group;
+        if (in_array($a['status'],['accepted','pending'],true)) {
+            // Older anonymous songs have no browser identity. Give each single-request priority.
+            return ($b['votes'] <=> $a['votes'])
+                ?: (($a['request_total'] ?? 1) <=> ($b['request_total'] ?? 1))
+                ?: ($a['created_at'] <=> $b['created_at'])
+                ?: ($a['id'] <=> $b['id']);
+        }
+        return ($b['votes'] <=> $a['votes']) ?: ($b['created_at'] <=> $a['created_at']) ?: ($b['id'] <=> $a['id']);
+    });
     foreach ($rows as &$row) {
         foreach (['id','created_at','votes'] as $key) $row[$key]=(int)$row[$key];
         if ($public) {
+            unset($row['guest_number'], $row['request_number'], $row['request_total']);
             $row['my_vote']=(int)$row['my_vote'];
             $row['voted']=$row['my_vote']!==0;
         } else {
@@ -102,16 +116,17 @@ function submit_request(array $data): array {
     }
     $guest=guest();
     ensure_request_submitters();
-    return tx(function() use($guest,$title,$artist,$name,$note,$art,$store,$data){
-        rate($guest,'submit',6,600);
-        rate(iphash(),'ip_submit',400,600);
+    $candidate=active();
+    if (!$candidate) err(409,'Requests are currently closed.');
+    $id=(int)$candidate['id'];
+    return tx(function() use($id,$guest,$title,$artist,$name,$note,$art,$store,$data){
+        // Lock before the first snapshot read so simultaneous submissions see the latest limits and songs.
+        sql('SELECT id FROM events WHERE id=? FOR UPDATE',[$id])->fetch();
         $event=active();
         if (!$event || !$event['requests_open']) err(409,'Requests are currently closed.');
-        $id=(int)$event['id'];
         $expected=$data['event_id']??null;
-        if (($expected!==null && $expected!==$id) || ($expected===null && isset($event['opens_at']))) err(409,'The event has changed. Refresh and try again.');
-        // Serialize duplicate submissions for this event before reading the unique song key or cap.
-        sql('SELECT id FROM events WHERE id=? FOR UPDATE',[$id]);
+        if ((int)$event['id']!==$id || ($expected!==null && $expected!==$id) || ($expected===null && isset($event['opens_at']))) err(409,'The event has changed. Refresh and try again.');
+        rate(iphash(),'ip_submit',400,600);
         $song=sql('SELECT id,status FROM requests WHERE event_id=? AND norm_title=? AND norm_artist=? FOR UPDATE',[$id,norm($title),norm($artist)])->fetch();
         if ($song) {
             if (in_array($song['status'],['skipped','declined'],true)) return ['ok'=>true];
@@ -121,6 +136,12 @@ function submit_request(array $data): array {
             }
             return ['ok'=>true,'duplicate'=>true,'status'=>$song['status'],'voted'=>$voted];
         }
+        $limit=$event['song_limit'];
+        $minutes=$event['window_minutes'];
+        $recent=(int)sql('SELECT COUNT(*) FROM requests r JOIN request_submitters s ON s.request_id=r.id
+            WHERE r.event_id=? AND s.guest_key=? AND r.created_at>?',[$id,$guest,time()-60*$minutes])->fetchColumn();
+        if ($recent >= $limit) err(429, sprintf('You can request %d %s every %d %s at this event. Try again later.',
+            $limit,$limit===1?'song':'songs',$minutes,$minutes===1?'minute':'minutes'));
         if ((int)sql('SELECT COUNT(*) FROM requests WHERE event_id=? FOR UPDATE',[$id])->fetchColumn()>=500) err(409,'Request list is full.');
         sql('INSERT INTO requests(event_id,title,artist,requester_name,note,artwork_url,store_url,norm_title,norm_artist,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)',
             [$id,$title,$artist,$name,$note,$art,$store,norm($title),norm($artist),time()]);

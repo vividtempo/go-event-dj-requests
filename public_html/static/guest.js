@@ -109,7 +109,7 @@ function resetEntry(eventId) {
 
 function renderSongs() {
     const songs = board.requests || [];
-    // The API already ranks each status by votes, then recency.
+    // Keep the same pending order the DJ sees.
     const items = filter === 'played'
         ? songs.filter(song => song.status === 'played')
         : [...songs.filter(song => song.status === 'accepted'), ...songs.filter(song => song.status === 'pending')];

@@ -82,3 +82,12 @@ CREATE TABLE IF NOT EXISTS guest_presence (
  INDEX idx_presence_seen (last_seen),
  CONSTRAINT fk_presence_event FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS request_event_controls (
+    event_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
+    overrides_json TEXT NULL,
+    song_limit SMALLINT UNSIGNED NOT NULL DEFAULT 6,
+    window_minutes SMALLINT UNSIGNED NOT NULL DEFAULT 10,
+    manual_paused TINYINT(1) NOT NULL DEFAULT 0,
+    CONSTRAINT fk_controls_event FOREIGN KEY(event_id) REFERENCES events(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

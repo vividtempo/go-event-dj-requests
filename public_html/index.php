@@ -26,6 +26,7 @@ function links():array{$links=sql('SELECT booking_url,contact_url,tip_url,review
 function safeurl(mixed $v):string{if(!is_string($v)||strlen($v)>500)err(400,'Invalid link.');$v=trim($v);if($v==='')return ''; $p=parse_url($v);if(!$p||($p['scheme']??'')!=='https'||empty($p['host'])||isset($p['user'])||isset($p['pass']))err(400,'Use an HTTPS link.');return $v;}
 try{
 require __DIR__.'/guest_links.php';
+require __DIR__.'/event_controls.php';
 require __DIR__.'/schedule.php';
 require __DIR__.'/automation.php';
 require __DIR__.'/catalog.php';
@@ -63,7 +64,22 @@ if($path==='/api/admin/events'&&$method==='GET'){
     }
     unset($e);out(['events'=>$r,'schedule_conflict'=>$live['conflict']]);
 }
-if($path==='/api/admin/events'&&$method==='POST'){admin(true);$d=input();$name=clean($d['name']??null,120);$date=$d['date']??'';$venue=clean($d['venue']??'',160,false);if(!is_string($date)||($date!==''&&!preg_match('/^\d{4}-\d{2}-\d{2}$/',$date)))err(400,'Invalid date.');sql('INSERT INTO events(name,event_date,venue,created_at) VALUES(?,?,?,?)',[$name,$date,$venue,time()]);out(['ok'=>true,'id'=>(int)db()->lastInsertId()]);}
+if ($path==='/api/admin/events' && $method==='POST') {
+    admin(true); $data=input();
+    $fields=automation_fields(array_intersect_key($data,array_flip(['name','date','venue'])),true);
+    [$limit,$minutes]=event_request_limits($data);
+    ensure_event_controls();
+    $id=tx(function() use ($fields,$limit,$minutes) {
+        sql('INSERT INTO events(name,event_date,venue,created_at) VALUES(?,?,?,?)',[$fields['name'],$fields['event_date']??'',$fields['venue']??'',time()]);
+        $id=(int)db()->lastInsertId();
+        sql('INSERT INTO request_event_controls(event_id,song_limit,window_minutes) VALUES(?,?,?)',[$id,$limit,$minutes]);
+        return $id;
+    });
+    out(['ok'=>true,'id'=>$id]);
+}
+if ($method==='POST' && preg_match('#^/api/admin/events/(\d+)/edit$#',$path,$m)) {
+    admin(true); out(change_event_controls((int)$m[1], input()));
+}
 if($method==='POST'&&preg_match('#^/api/admin/events/(\d+)/action$#',$path,$m)){
     admin(true);$action=input()['action']??'';$id=(int)$m[1];$hasSchedule=request_schedule_available();
     tx(function()use($id,$action,$hasSchedule){
@@ -71,8 +87,10 @@ if($method==='POST'&&preg_match('#^/api/admin/events/(\d+)/action$#',$path,$m)){
         $e=sql('SELECT * FROM events WHERE id=?',[$id])->fetch();
         if(!$e)err(404,'Event not found.');
         $schedule=$hasSchedule?sql('SELECT * FROM planner_request_schedule WHERE event_id=?',[$id])->fetch():false;
-        if($schedule){
-            if(in_array($action,['activate','open'],true)&&($e['archived']||!scheduled_window($schedule,time())))err(409,'This event is outside its Planner request hours.');
+        $controls=event_controls_available()?sql('SELECT * FROM request_event_controls WHERE event_id=?',[$id])->fetch():false;
+        $effective=effective_event($e+($schedule?:[])+($controls?:[]));
+        if(isset($effective['opens_at'])){
+            if(in_array($action,['activate','open'],true)&&($e['archived']||!scheduled_window($effective,time())))err(409,'This event is outside its request hours.');
             if(in_array($action,['activate','open','close','deactivate','auto'],true)){
                 if(in_array($action,['activate','open'],true)){
                     sql('UPDATE events SET is_active=0,requests_open=0 WHERE is_active=1');
@@ -82,7 +100,9 @@ if($method==='POST'&&preg_match('#^/api/admin/events/(\d+)/action$#',$path,$m)){
                 } else {
                     sql('UPDATE events SET requests_open=0 WHERE id=?',[$id]);
                 }
-                sql('UPDATE planner_request_schedule SET paused=? WHERE event_id=?',[in_array($action,['activate','open','auto'],true)?0:1,$id]);
+                $pause=in_array($action,['activate','open','auto'],true)?0:1;
+                if ($schedule) sql('UPDATE planner_request_schedule SET paused=? WHERE event_id=?',[$pause,$id]);
+                else sql('UPDATE request_event_controls SET manual_paused=? WHERE event_id=?',[$pause,$id]);
                 return;
             }
         }

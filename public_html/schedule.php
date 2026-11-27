@@ -48,13 +48,24 @@ function choose_request_event(array $events, int $now): array {
 }
 
 function request_schedule_rows(bool $all=false, ?int $now=null): array {
-    if (!request_schedule_available()) return sql($all
-        ? 'SELECT * FROM events ORDER BY created_at DESC,id DESC'
-        : 'SELECT * FROM events WHERE archived=0 AND is_active=1 ORDER BY id')->fetchAll();
-    $base='SELECT e.*,s.opens_at,s.closes_at,s.timezone,s.paused FROM events e LEFT JOIN planner_request_schedule s ON s.event_id=e.id';
-    if ($all) return sql($base.' ORDER BY created_at DESC,id DESC')->fetchAll();
-    $now??=time();
-    return sql($base.' WHERE e.archived=0 AND (e.is_active=1 OR (s.opens_at>0 AND s.opens_at<=? AND s.closes_at>?)) ORDER BY e.id',[$now,$now])->fetchAll();
+    $now ??= time();
+    $select = 'SELECT e.*';
+    $from = ' FROM events e';
+    $candidates = ['e.is_active=1'];
+    $args = [];
+    if (request_schedule_available()) {
+        $select .= ',s.opens_at,s.closes_at,s.timezone,s.paused';
+        $from .= ' LEFT JOIN planner_request_schedule s ON s.event_id=e.id';
+        $candidates[] = '(s.opens_at>0 AND s.opens_at<=? AND s.closes_at>?)';
+        $args = [$now,$now];
+    }
+    if (event_controls_available()) {
+        $select .= ',c.overrides_json,c.song_limit,c.window_minutes,c.manual_paused';
+        $from .= ' LEFT JOIN request_event_controls c ON c.event_id=e.id';
+        $candidates[] = 'c.overrides_json IS NOT NULL';
+    }
+    $where = $all ? ' ORDER BY e.created_at DESC,e.id DESC' : ' WHERE e.archived=0 AND ('.implode(' OR ', $candidates).') ORDER BY e.id';
+    return array_map('effective_event', sql($select.$from.$where, $all ? [] : $args)->fetchAll());
 }
 
 function validate_planner_schedule(array $data): array {
