@@ -14,16 +14,24 @@ try {
     const manualSong = {...song, id:2, title:'Manual entry', artwork_url:'', store_url:''};
     const event = {id:1, name:'Reception', is_active:true, requests_open:true};
     for (const width of [320, 390, 768]) {
+        const accepted = {...manualSong, id:3, title:'Accepted song', status:'accepted', votes:0};
+        const played = {...manualSong, id:4, title:'Played song', status:'played'};
+        let requests = [song, manualSong, accepted, played];
+        let submitted;
         const page = await browser.newPage({viewport: {width, height: 850}, isMobile: width < 768, reducedMotion: 'reduce'});
         const localCover = new URL('../public_html/static/images/favicon-96x96.png', import.meta.url);
         await page.route(song.artwork_url, async route => route.fulfill({contentType:'image/png', body:await readFile(localCover)}));
         await page.route('http://fixture.test/**', async route => {
             const path = new URL(route.request().url()).pathname;
             if (path === '/api/board') return route.fulfill({json: {
-                state: 'open', event, requests: [song, manualSong], active_guests: 1,
+                state: 'open', event, requests, active_guests: 1,
                 links: {booking_url:'https://example.org/book', tip_url:'https://example.org/tip', review_url:'https://example.org/review',
                     contact_url:'https://example.org/contact', custom_links:[{label:'Instagram', url:'https://instagram.com/example'}]}
             }});
+            if (path === '/api/requests') {
+                submitted = route.request().postDataJSON();
+                return route.fulfill({json:{ok:true, duplicate:true, status:'pending'}});
+            }
             if (path === '/api/catalog') return route.fulfill({json: {songs: [song]}});
             if (path.startsWith('/api/admin/')) {
                 const responses = {
@@ -41,14 +49,26 @@ try {
         });
         await page.goto('http://fixture.test/requests');
         await page.locator('#entry').waitFor();
-        assert.ok(await page.getByLabel('Your name (optional)').isVisible());
-        assert.ok(await page.getByLabel('Dedication or special note (optional)').isVisible());
-        assert.ok(await page.getByRole('button', {name:'Send Song Request'}).isDisabled());
-        await page.getByLabel('Song or artist', {exact:true}).fill('Candy');
+        assert.equal(await page.locator('#event-name').textContent(), event.name);
+        assert.ok(await page.getByRole('heading', {name:'Request a Song'}).isVisible());
+        const search = page.getByRole('searchbox', {name:'Search by Song or Artist'});
+        assert.equal(await page.getByRole('searchbox').count(), 1);
+        const name = page.getByLabel('Your Name (Optional)');
+        const note = page.getByLabel('Dedication or Special Note (Optional)');
+        const send = page.locator('#submit-btn');
+        assert.ok(await name.isHidden() && await note.isHidden() && await send.isHidden());
+        const queue = page.locator('#requests-list');
+        const titles = queue.locator('.song-title');
+        assert.deepEqual(await titles.allTextContents(), [accepted.title, song.title, manualSong.title]);
+        const playedTab = page.getByRole('button', {name:'Played', exact:true});
+        const queueTab = page.getByRole('button', {name:'In the Queue', exact:true});
+        await playedTab.click();
+        assert.deepEqual(await titles.allTextContents(), [played.title]);
+        await queueTab.click();
+        assert.equal(await queueTab.getAttribute('aria-pressed'), 'true');
+        await search.fill('Candy');
         const choose = page.getByRole('button', {name:'Choose '+song.title+' by '+song.artist});
         await choose.waitFor();
-        const picker = page.locator('.result-panel');
-        assert.ok(await picker.getByRole('button', {name:'Enter request manually'}).isVisible());
         await page.evaluate(() => document.fonts.ready);
         assert.ok(await page.evaluate(() => document.documentElement.scrollWidth === innerWidth && innerWidth === document.documentElement.clientWidth));
         const result = page.locator('#suggestions .search-result').first();
@@ -60,16 +80,15 @@ try {
         await store.waitForLoadState();
         assert.equal(store.url(), song.store_url);
         await store.close();
-        assert.ok(await page.getByRole('button', {name:'Send Song Request'}).isDisabled());
+        assert.ok(await send.isDisabled());
         assert.equal(await result.locator('.track-cover').evaluate(e => e.offsetWidth), coverSize);
         const title = await result.locator('.song-title').boundingBox();
         await page.mouse.click(title.x + 3, title.y + 3);
-        assert.ok(await page.getByRole('button', {name:'Send Song Request'}).isEnabled());
+        assert.ok(await send.isEnabled());
         const selected = page.locator('#selection');
         assert.equal(await selected.locator('.track-cover').getAttribute('src'), song.artwork_url);
         assert.equal(await selected.locator('.track-cover').evaluate(e => e.offsetHeight), coverSize);
         assert.equal(await selected.locator('.store-badge').getAttribute('href'), song.store_url);
-        const queue = page.locator('#requests-list');
         await queue.locator('.track-cover').scrollIntoViewIfNeeded();
         await page.waitForFunction(() => document.querySelector('#requests-list .track-cover')?.naturalWidth > 0);
         assert.equal(await queue.locator('.track-cover').evaluate(e => e.offsetWidth), coverSize);
@@ -82,17 +101,36 @@ try {
         assert.equal(await page.locator('#presence-count').textContent(), '1 active');
         assert.ok(await page.getByRole('button', {name:'Upvote '+song.title}).locator('use[href$="#thumb-up"]').count());
         assert.ok(await page.getByRole('button', {name:'Downvote '+song.title}).locator('use[href$="#thumb-down"]').count());
+        await name.fill('Sam');
+        await note.fill('For the anniversary couple');
+        await page.getByRole('button', {name:'Change Song'}).click();
+        await choose.waitFor();
+        await choose.click();
+        assert.equal(await name.inputValue(), 'Sam');
+        assert.equal(await note.inputValue(), 'For the anniversary couple');
+        await send.click();
+        await search.waitFor();
+        assert.equal(submitted.catalog.title, song.title);
+        assert.equal(submitted.note, 'For the anniversary couple');
+        assert.equal(submitted.requester_name, 'Sam');
+        assert.equal(await name.inputValue(), '');
+        assert.ok(await send.isHidden());
+        requests = [{...song,status:'accepted'}, manualSong, accepted, played];
+        await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+        await page.waitForFunction(title => [...document.querySelectorAll('.request')].some(row =>
+            row.querySelector('.song-title').textContent === title && row.querySelector('.song-status.accepted')), song.title);
+        assert.deepEqual(await titles.allTextContents(), [song.title, accepted.title, manualSong.title]);
         const failedCover = route => route.abort();
         await page.route(song.artwork_url, failedCover);
         await page.reload();
         await page.locator('.request').first().scrollIntoViewIfNeeded();
         await page.waitForFunction(() => document.querySelector('.request .music-tile') && !document.querySelector('.store-badge'));
-        await page.getByLabel('Song or artist', {exact:true}).fill('Candy');
+        await search.fill('Candy');
         await choose.waitFor();
         await result.scrollIntoViewIfNeeded();
         await page.waitForFunction(() => document.querySelector('#suggestions .music-tile') && !document.querySelector('#suggestions .store-badge'));
         await choose.press('Enter');
-        assert.ok(await page.getByRole('button', {name:'Send Song Request'}).isEnabled());
+        assert.ok(await send.isEnabled());
         await page.unroute(song.artwork_url, failedCover);
         await page.goto('http://fixture.test/admin');
         const card = page.locator('.queue-card').first();

@@ -78,9 +78,9 @@ button:focus-visible, a:focus-visible, [tabindex="-1"]:focus-visible {
 }
 .shell { width: 100%; max-width: 1024px; margin: auto; padding: 28px clamp(14px, 4vw, 32px) 44px; }
 .shell.narrow { max-width: 756px; }
-.top, .row, .section-title, .actions, .genre-tags, .tabbar, .section-nav { display: flex; align-items: center; gap: .6rem; }
+.top, .row, .section-title, .actions, .tabbar, .section-nav { display: flex; align-items: center; gap: .6rem; }
 .top, .row, .section-title { justify-content: space-between; }
-.row.wrap, .actions, .genre-tags, .tabbar, .section-nav { flex-wrap: wrap; }
+.row.wrap, .actions, .tabbar, .section-nav { flex-wrap: wrap; }
 .top { gap: var(--space); padding-bottom: 20px; margin-bottom: 24px; border-bottom: 1px solid var(--line); }
 .top nav a { color: var(--muted); text-decoration: none; font-size: var(--size-small); }
 .top nav a:hover { color: var(--text); }
@@ -88,8 +88,14 @@ button:focus-visible, a:focus-visible, [tabindex="-1"]:focus-visible {
 .presence { display: flex; align-items: center; gap: .35rem; color: var(--muted); font-size: .85rem; }
 .presence .link-icon { width: 17px; height: 17px; }
 .guest-top-tools nav a { font-size: .78rem; }
-.request-state { font-size: .78rem; font-weight: var(--weight-emphasis); letter-spacing: .065em; text-transform: uppercase; color: var(--muted); }
-.request-state.open { color: var(--rose); }
+.guest-board .top { padding-bottom: 12px; margin-bottom: 16px; }
+.guest-board .brand-logo-frame { width: clamp(102px, 16vw, 138px); }
+.event-context { color: var(--muted); font-size: 1rem; font-weight: var(--weight-emphasis); overflow-wrap: anywhere; }
+.event-context + h1 { margin-top: .3rem; }
+.entry-panel form { margin-top: 1rem; }
+.guest-board .btn.primary { background: var(--blue); }
+.guest-board .btn.primary:disabled { background: var(--line); }
+.guest-board .flash.bad { border-left-color: var(--red); }
 .badge.open::before { content: ""; width: .42rem; height: .42rem; margin-right: .34rem; border-radius: 50%; background: currentColor; }
 .brand-lockup { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 8px; min-width: 0; text-decoration: none; }
 .brand-logo-frame { display: block; position: relative; width: clamp(128px, 16vw, 158px); max-width: 100%; aspect-ratio: 451.389/160.643; }
@@ -108,9 +114,6 @@ button:focus-visible, a:focus-visible, [tabindex="-1"]:focus-visible {
   border-radius: var(--radius-panel);
   background: var(--panel);
 }
-.panel-compact { padding: clamp(14px, 2vw, 18px); }
-.hero { padding-block: clamp(22px, 4vw, 34px); }
-.hero p { margin-top: .6rem; }
 .space-top { margin-top: 1rem; }
 .space-bottom { margin-bottom: 1rem; }
 .hidden { display: none !important; }
@@ -149,13 +152,11 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--focus); out
 @media (hover: hover) {
   .btn:not(:disabled):hover, .search-result:hover { background: var(--tile-hover); border-color: var(--muted); }
   .btn.primary:not(:disabled):hover { background: var(--red-hover); }
+  .guest-board .btn.primary:not(:disabled):hover { background: var(--blue); border-color: var(--focus); }
 }
-.badge, .genre { display: inline-flex; align-items: center; padding: .25rem .64rem; border-radius: var(--radius-pill); background: var(--tile); font-size: .78rem; }
+.badge { display: inline-flex; align-items: center; padding: .25rem .64rem; border-radius: var(--radius-pill); background: var(--tile); font-size: .78rem; }
 .badge.open { color: var(--green); background: var(--positive-surface); }
 .badge.closed { color: var(--amber); background: var(--warning-surface); }
-.vibe { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--line); }
-.vibe h2 { font-size: .95rem; margin-bottom: .5rem; letter-spacing: 0; }
-.genre { color: var(--text); }
 .section-title { margin-bottom: .9rem; }
 .section-title h2, .session-summary h2 { margin: 0; }
 .section-title .small { margin-top: .2rem; }
@@ -163,10 +164,15 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--focus); out
 .tabbar .btn, .queue-card .actions .btn, .session-summary .btn { border-radius: var(--radius-pill); }
 .tabbar .btn { color: var(--muted); font-weight: 450; }
 .tabbar .btn.active { color: var(--navy); background: var(--text); border-color: var(--text); }
-.queue-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: .8rem; }
-.queue-tabs .btn { padding-inline: .2rem; }
-.queue-description { margin: .65rem 0; }
-.find { margin-bottom: .4rem; }
+.queue-tabs { display: flex; align-items: center; gap: 1rem; border-bottom: 1px solid var(--line); }
+.queue-tabs button, .change-song {
+  min-height: var(--touch-size); padding: .35rem .15rem;
+  border: 0; background: transparent; color: var(--muted); font-size: .875rem;
+}
+.queue-tabs button { border-bottom: 2px solid transparent; }
+.queue-tabs button[aria-pressed="true"] { border-color: var(--focus); color: var(--text); }
+.queue-tabs button:hover, .change-song:hover { color: var(--text); }
+.change-song { color: var(--focus); text-decoration: underline; text-underline-offset: .18em; }
 
 .link-icon { width: var(--icon-size); height: var(--icon-size); flex: none; }
 .music-tile { width: 40px; height: 40px; display: grid; place-items: center; border-radius: var(--radius-control); background: var(--line); color: var(--text); flex: none; }
@@ -182,9 +188,8 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--focus); out
 .song-artist, .request-by { color: var(--muted); line-height: 1.4; }
 .song-artist { font-size: var(--size-label); margin-top: .15rem; }
 .song-picker { display: grid; grid-template-columns: minmax(0, 1fr); gap: .65rem; }
-.result-panel { border-radius: var(--radius-control); background: var(--inset); }
+.suggestions { border-radius: var(--radius-control); background: var(--inset); }
 .suggestions:empty, .search-hint:empty { display: none; }
-.stack-tight { gap: .6rem; }
 .search-result {
   position: relative; width: 100%; padding: .72rem .65rem; color: var(--text);
   background: transparent; text-align: left;
@@ -196,16 +201,16 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--focus); out
 /* The song button covers the row. The separate store link remains independently tappable. */
 .choose-song::after { content: ""; position: absolute; inset: 0; }
 .search-result .store-badge { position: relative; z-index: 1; }
-.track-row { padding: .75rem; }
-.text-action {
-  display: flex; flex-direction: column; align-items: flex-start; gap: .2rem;
-  width: 100%; min-height: var(--touch-size); padding: .7rem .65rem;
-  border: 0; border-radius: 0 0 var(--radius-control) var(--radius-control); background: transparent;
-  color: var(--muted); font-size: var(--size-label); text-align: left;
+.selected-song { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: .75rem; }
+.floating-field { position: relative; min-width: 0; }
+.floating-field input, .floating-field textarea {
+  padding: 1.45rem .85rem .35rem; border-radius: var(--radius-control); background: var(--inset);
 }
-.suggestions:not(:empty) ~ .text-action, .selected-track:not(.hidden) + .text-action { border-top: 1px solid var(--line); }
-.text-action:hover { color: white; }
-.text-action .link-icon { width: 15px; height: 15px; }
+.floating-field label {
+  position: absolute; top: .3rem; left: .9rem; right: .9rem;
+  color: var(--muted); font-size: .75rem; line-height: 1.3; pointer-events: none;
+}
+.floating-field :placeholder-shown:not(:focus) + label { top: .85rem; font-size: .94rem; }
 .song-status { display: block; margin-top: .25rem; font-size: .78rem; }
 .song-status.pending { color: var(--amber); }
 .song-status.accepted { color: var(--green); }
@@ -225,9 +230,6 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--focus); out
 .empty { padding: 1.1rem 0; color: var(--muted); font-size: var(--size-label); }
 
 .connection-panel { text-align: center; }
-.connection-panel::before { content: ""; display: block; width: 42px; height: 3px; border-radius: 10px; margin: 0 auto 16px; background: linear-gradient(90deg, var(--red), var(--blue)); }
-.connection-panel h2 { margin-bottom: .3rem; }
-.connection-copy { margin-bottom: 1rem; font-size: var(--size-label); }
 .booking-link .btn, .tiprow .btn { flex-direction: column; gap: .4rem; padding: .7rem .35rem; }
 .booking-link .btn { width: 100%; }
 .booking-link:not(:empty) + .tiprow:not(:empty) { margin-top: .6rem; }
@@ -290,8 +292,6 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--focus); out
   :root { --cover-size: 56px; }
   .tiprow { gap: .35rem; }
   .tiprow .btn { font-size: .8rem; }
-  .queue-tabs { gap: .25rem; }
-  .queue-tabs .btn { font-size: .79rem; }
   .queue-card { padding: .8rem; }
   .queue-tools { gap: .2rem; }
 }

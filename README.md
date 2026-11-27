@@ -60,7 +60,7 @@ This deliverable was syntax-checked with PHP CLI and source asset checks. It was
 
 ## Brand assets
 
-Guest and DJ pages use self-hosted Inter on flat navy surfaces with restrained rose accents. The printed QR sign retains Montserrat. The original SVG remains the static fallback. CSS displays it and the supplied spinning Lottie logo in white without a background. Printed QR signs use the original dark SVG on white paper.
+Guest and DJ pages use self-hosted Inter on navy surfaces. The guest form uses brand blue for its primary action. The printed QR sign retains Montserrat. The original SVG remains the static fallback. CSS displays it and the supplied spinning Lottie logo in white without a background. Printed QR signs use the original dark SVG on white paper.
 
 The self-hosted Lottie light SVG player v5.13.0 animates `go-event-dj-logo.json`; no CDN or external animation request is needed. Reduced-motion preferences use the static logo, and animation pauses in hidden tabs. Montserrat Latin variable font is self-hosted. Licenses accompany the player in `static/vendor/lottie-LICENSE.md` and font in `static/fonts/OFL.txt`. The browser icon is `favicon-96x96.png`.
 

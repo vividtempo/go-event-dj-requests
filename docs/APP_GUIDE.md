@@ -26,9 +26,9 @@ Original tables: events, requests, votes, rate_events, admin_sessions, settings.
 
 ## Guest requests and DJ moderation
 
-The guest form searches the US iTunes catalog by song or artist. Guests can also enter the title and artist manually. Catalog results, the selected-song preview, Guest requests, and the DJ Control Center display available album covers with Apple’s compact, linked iTunes Store badge. Tapping a search result selects the song. Tapping its badge opens the store. Songs with unavailable artwork use a music-note tile. The server verifies selected track metadata. Search requires the PHP cURL extension and outbound HTTPS to itunes.apple.com. An unavailable catalog leaves manual entry available.
+The guest form searches the US iTunes catalog by song or artist. Selecting a result reveals the optional name and dedication fields and the Send Request button. Catalog results, the selected-song preview, the guest queue, and the DJ Control Center display available album covers with Apple’s compact, linked iTunes Store badge. Tapping a search result selects the song. Tapping its badge opens the store. Songs with unavailable artwork use a music-note tile. The server verifies selected track metadata. Search requires the PHP cURL extension and outbound HTTPS to itunes.apple.com. An unavailable catalog displays a retry message.
 
-The DJ can accept, mark played, decline, or restore a request. Guests see pending, accepted, and played songs ranked by net votes within each group. Guests can vote in either direction on pending or accepted songs while requests are open. Only the DJ sees requester names, dedications, and declined songs. Active guests counts distinct browser cookies seen on the current event in the last minute. The permanent QR opens the same guest page for every event.
+The DJ can accept, mark played, decline, or restore a request. Guests see accepted songs above pending songs in one queue, ranked by net votes within each group. A separate Played view shows completed songs. Guests can vote in either direction on pending or accepted songs while requests are open. Only the DJ sees requester names, dedications, and declined songs. Active guests counts distinct browser cookies seen on the current event in the last minute. The permanent QR opens the same guest page for every event.
 
 ## Guest links
 
