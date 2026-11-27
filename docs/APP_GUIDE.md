@@ -30,6 +30,13 @@ The guest form searches the US iTunes catalog by song or artist. Selecting a res
 
 The DJ can accept, mark played, decline, or restore a request. Guests see accepted songs above pending songs in one queue, ranked by net votes within each group. Ties favor guests with fewer submissions for the event, then the oldest song. Each vote counts once. A separate Played view shows completed songs. Guests can vote in either direction on pending or accepted songs while requests are open. A guest’s last submitted name is remembered for that event in the same tab. Only the DJ sees names, dedications, declined songs, and requester activity. The DJ queue combines accepted and pending songs. New requests from the same browser and event share a guest number and show their position in that guest’s total. Voting or requesting a duplicate does not increase the total. Each event has a rolling songs-per-guest limit, initially six new songs in ten minutes. Adjust the song count and window when creating or editing the event. Older requests without a recorded submitter retain their original byline. Active guests counts distinct browser cookies seen on the current event in the last minute. The permanent QR opens the same guest page for every event.
 
+
+### DJ Browser Notifications
+
+Open **Settings → Song Request Notifications** and enable alerts on each DJ device. Use **Send Test Alert** to verify delivery. On iPhone or iPad, add the dashboard to the Home Screen and open it from that icon first. Tap an alert to open its event’s Live Queue. Turning alerts off or signing out explicitly removes that device from delivery.
+
+The PHP app provisions its signing key and notification tables on the first authenticated setup. It needs OpenSSL, cURL and outbound HTTPS to Chrome and Apple push services. Each new song queues one encrypted message per enabled browser. Votes, duplicates and moderation changes do not enqueue messages. Delivery starts after submission and transient failures retry on subsequent queue activity for up to five minutes. No separate worker or external messaging account is required.
+
 ## Guest links
 
 DJ Settings provides optional booking, contact (Popl), review, and tip URLs plus up to five additional labeled buttons for contact, booking, social pages, email, or telephone. HTTPS links are accepted; extra buttons also accept plain `mailto:address@example.com` and `tel:+15551234567`. Blank URL fields are omitted. Links appear both while requests are open and while closed; the entire section hides when all links are empty.

@@ -4,19 +4,28 @@ import {createHash} from 'node:crypto';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import assert from 'node:assert/strict';
+import {testDjPush} from './dj-push.mjs';
 const runtime=resolve(process.env.PHP_WASM_DIR||'node_modules');
 const {PHP,loadPHPRuntime}=await import(pathToFileURL(resolve(runtime,'@php-wasm/universal/index.js')));
 const {getPHPLoaderModule}=await import(pathToFileURL(resolve(runtime,'@php-wasm/node/index.js')));
 const php=new PHP(await loadPHPRuntime(await getPHPLoaderModule('8.3'),{processId:7}));
 const read=(p)=>readFileSync(new URL('../public_html/'+p,import.meta.url),'utf8');
 php.mkdir('/app');
-for(const f of ['event_controls.php','schedule.php','automation.php','catalog.php','request_queue.php'])php.writeFile('/app/'+f,read(f));
+// The WASM filesystem lacks the OpenSSL configuration provided by a normal PHP installation.
+php.mkdir('/root/install/ssl');
+php.writeFile('/root/install/ssl/openssl.cnf','[req]\ndefault_bits=2048\ndistinguished_name=req_dn\n[req_dn]\n');
+for(const f of ['event_controls.php','schedule.php','automation.php','catalog.php','request_queue.php','dj_push.php'])php.writeFile('/app/'+f,read(f));
 php.writeFile('/app/guest_links.php','<?php function guest_links():array{return [];}');
 const mockDb="function db():PDO{static $db;if(!$db)$db=new PDO('sqlite:/app/fixture.db',null,null,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);return $db;}";
-const index=read('index.php').replace(/^function db\(\):PDO[^\n]+/m,mockDb).replace("function sql(string $q,array $args=[]):PDOStatement{","function sql(string $q,array $args=[]):PDOStatement{\$q=str_replace([' FOR UPDATE','INSERT IGNORE','ON DUPLICATE KEY UPDATE last_seen=?','ON DUPLICATE KEY UPDATE direction=?'],['','INSERT OR IGNORE','ON CONFLICT(event_id,guest_key) DO UPDATE SET last_seen=?','ON CONFLICT(request_id,voter_key) DO UPDATE SET direction=? WHERE direction<>excluded.direction'],\$q);");
+const index=read('index.php').replace(/^function db\(\):PDO[^\n]+/m,mockDb).replace("function sql(string $q,array $args=[]):PDOStatement{","function sql(string $q,array $args=[]):PDOStatement{\$q=str_replace([' FOR UPDATE','INSERT IGNORE','ON DUPLICATE KEY UPDATE last_seen=?','ON DUPLICATE KEY UPDATE direction=?','ON DUPLICATE KEY UPDATE p256dh=?,auth_key=?'],['','INSERT OR IGNORE','ON CONFLICT(event_id,guest_key) DO UPDATE SET last_seen=?','ON CONFLICT(request_id,voter_key) DO UPDATE SET direction=? WHERE direction<>excluded.direction','ON CONFLICT(id) DO UPDATE SET p256dh=?,auth_key=?'],\$q);");
 // The production adapter uses InnoDB. Preseed its SQLite equivalent and bypass the equivalent DDL.
 const schedule=read('schedule.php').replace(/function request_schedule_schema\(\): void \{[\s\S]*?\n\}/,'function request_schedule_schema(): void {}');
 php.writeFile('/app/schedule.php',schedule);
+// Capture only the provider HTTP operation. Real signing, encryption, queue and subscription routes still run.
+const push=read('dj_push.php').replace(/    \$ch=curl_init\(\$endpoint\);[\s\S]*?return \(int\)curl_getinfo\(\$ch,CURLINFO_RESPONSE_CODE\);/,
+    "    file_put_contents('/deliveries',json_encode(['id'=>$device['id'],'auth'=>$auth,'body'=>base64_encode($body)]).PHP_EOL,FILE_APPEND); return is_file('/push-status') ? (int)file_get_contents('/push-status') : 201;");
+assert.ok(push.includes("'/deliveries'"));
+php.writeFile('/app/dj_push.php',push);
 php.writeFile('/app/index.php',index);
 const key='gedj_'+'b'.repeat(64);
 const dj='a'.repeat(64);
@@ -28,6 +37,9 @@ CREATE TABLE automation_settings(id INTEGER PRIMARY KEY,token_hash TEXT);
 CREATE TABLE automation_event_links(external_id TEXT PRIMARY KEY,event_id INTEGER UNIQUE);
 CREATE TABLE planner_request_schedule(event_id INTEGER PRIMARY KEY,opens_at INTEGER DEFAULT 0,closes_at INTEGER DEFAULT 0,timezone TEXT,source_revision INTEGER,paused INTEGER DEFAULT 0);
 CREATE TABLE request_event_controls(event_id INTEGER PRIMARY KEY,overrides_json TEXT,song_limit INTEGER DEFAULT 6,window_minutes INTEGER DEFAULT 10,manual_paused INTEGER DEFAULT 0);
+CREATE TABLE dj_push_config(id INTEGER PRIMARY KEY,private_pem TEXT,public_key TEXT,token_cache TEXT);
+CREATE TABLE dj_push_devices(id TEXT PRIMARY KEY,endpoint TEXT,p256dh TEXT,auth_key TEXT);
+CREATE TABLE dj_push_outbox(request_id INTEGER,device_id TEXT REFERENCES dj_push_devices(id) ON DELETE CASCADE,payload TEXT,expires_at INTEGER,available_at INTEGER,PRIMARY KEY(request_id,device_id));
 CREATE TABLE rate_events(id INTEGER PRIMARY KEY,actor_hash TEXT,action TEXT,created_at INTEGER);
 CREATE TABLE admin_sessions(token_hash TEXT,csrf_token TEXT,expires_at INTEGER);
 CREATE TABLE settings(id INTEGER,tip_url TEXT,review_url TEXT,booking_url TEXT,contact_url TEXT);
@@ -42,6 +54,7 @@ INSERT INTO events(id,name,event_date,venue,created_at,is_active,requests_open,a
 INSERT INTO requests(id,event_id,title,artist,note,norm_title,norm_artist,created_at,status) VALUES(40,7,'Old Song','An Artist','','old song','an artist',1,'pending');");
 mkdir('/private');file_put_contents('/private/config.php','<?php return '.var_export(['base_url'=>'https://requests.goeventdj.com','app_secret'=>str_repeat('s',32),'admin_password_hash'=>password_hash('test-only',PASSWORD_DEFAULT)],true).';');`});
 assert.equal(setup.errors,'');
+php.writeFile('/private/web_push.php',readFileSync(new URL('../private/web_push.php',import.meta.url),'utf8'));
 async function req(url,method='GET',data,headers={}) {
     const r=await php.run({scriptPath:'/app/index.php',relativeUri:url,method,
         headers:{Host:'requests.goeventdj.com',Cookie:'dj_admin='+dj,'X-CSRF-Token':'fixture-csrf','Content-Type':'application/json',...headers},
@@ -242,5 +255,6 @@ assert.equal((await edit(7,{action:'reset'})).status,200);
 const reset=await eventById(7);
 assert.deepEqual([reset.name,Number(reset.closes_at),reset.song_limit,reset.window_minutes],['Current Planner',ended.closes_at,3,12]);
 assert.equal((await req('/api/board')).data.state,'none');
+await testDjPush({req,php,sendSong,mockDb,dj});
 console.log('Requests schedule tests passed (SQLite adapter, production MySQL SQL requires deployment smoke test).');
 } finally { php.exit(); }

@@ -147,6 +147,7 @@ function submit_request(array $data): array {
         $requestId=(int)db()->lastInsertId();
         sql('INSERT INTO request_submitters(request_id,guest_key) VALUES(?,?)',[$requestId,$guest]);
         sql('INSERT INTO votes(request_id,voter_key,created_at) VALUES(?,?,?)',[$requestId,$guest,time()]);
+        queue_dj_push($requestId,$id,$event['name'],$title,$artist);
         return ['ok'=>true,'duplicate'=>false,'request_id'=>$requestId];
     });
 }

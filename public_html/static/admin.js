@@ -1,9 +1,9 @@
 const $ = id=>document.getElementById(id);
-let csrf='', events=[],selectedEvent=null, songs=[], scheduleConflict=false, statusFilter='queue';
+let csrf='', events=[],selectedEvent=Number(new URLSearchParams(location.search).get('event'))||null, songs=[], scheduleConflict=false, statusFilter='queue';
 function msg(text,bad=false){const x=$('flash');x.textContent=text;x.className='flash'+(bad?' bad':'');clearTimeout(window.flashTimer);window.flashTimer=setTimeout(()=>x.className='hidden',5500)}
 async function api(url, method='GET', body=null){const headers={};if(body!==null)headers['content-type']='application/json';if(csrf&&method!=='GET')headers['x-csrf-token']=csrf;const res=await fetch(url,{method,headers,credentials:'same-origin',body:body!==null?JSON.stringify(body):undefined});const data=await res.json().catch(()=>({}));if(!res.ok){if(res.status===401&&url!=='/api/admin/login')showLogin();throw Error(data.detail||'Request failed')}return data;}
 function showLogin(){$('login-screen').className='panel login';$('dashboard').className='hidden';csrf='';clearApiKey()}
-function showDashboard(){$('login-screen').className='hidden';$('dashboard').className='';}
+function showDashboard(){$('login-screen').className='hidden';$('dashboard').className='';djAlerts.setup();}
 function btn(text,action,variant='small'){const b=el('button','btn '+variant,text);b.type='button';b.addEventListener('click',action);return b}
 function options(parent,items){parent.replaceChildren(...items)}
 function selectedTab(name){for(const b of document.querySelectorAll('[data-tab]'))b.classList.toggle('active',b.dataset.tab===name);for(const id of ['live','events','settings'])$(id+'-tab').className=id===name?'stack':'hidden'}

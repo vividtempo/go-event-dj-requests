@@ -30,6 +30,7 @@ require __DIR__.'/event_controls.php';
 require __DIR__.'/schedule.php';
 require __DIR__.'/automation.php';
 require __DIR__.'/catalog.php';
+require __DIR__.'/dj_push.php';
 require __DIR__.'/request_queue.php';
 if($path==='/'&&$method==='GET'){header('Location: /requests',true,307);exit;}
 $pages = ['/requests'=>'guest.html', '/admin'=>'admin.html', '/qr'=>'qr.html'];
@@ -47,12 +48,22 @@ if ($method === 'GET' && isset($pages[$path])) {
     echo $html;
     exit;
 }
-if ($path==='/api/board' && $method==='GET') out(request_board());
-if ($path==='/api/requests' && $method==='POST') out(submit_request(input()));
+if ($path==='/api/board' && $method==='GET') { $board=request_board(); push_after_response(); out($board); }
+if ($path==='/api/requests' && $method==='POST') {
+    $result=submit_request(input());
+    if (isset($result['request_id'])) push_after_response();
+    out($result);
+}
 if ($method==='POST' && preg_match('#^/api/requests/(\d+)/vote$#',$path,$m)) out(record_vote((int)$m[1],input()));
 if($path==='/api/admin/login'&&$method==='POST'){$d=input();$pass=$d['password']??null;if(!is_string($pass)||strlen($pass)>256)err(400,'Invalid password.');tx(fn()=>rate(iphash(),'login',8,900));if(!password_verify($pass,conf()['admin_password_hash']))err(401,'Incorrect password.');$token=bin2hex(random_bytes(32));$csrf=bin2hex(random_bytes(32));sql('INSERT INTO admin_sessions(token_hash,csrf_token,expires_at) VALUES(?,?,?)',[hash('sha256',$token),$csrf,time()+28800]);setcookie('dj_admin',$token,['expires'=>time()+28800,'path'=>'/','secure'=>https(),'httponly'=>true,'samesite'=>'Strict']);out(['ok'=>true,'csrf'=>$csrf]);}
 if($path==='/api/admin/me'&&$method==='GET')out(['authenticated'=>true,'csrf'=>admin()]);
-if($path==='/api/admin/logout'&&$method==='POST'){admin(true);sql('DELETE FROM admin_sessions WHERE token_hash=?',[hash('sha256',$_COOKIE['dj_admin'])]);setcookie('dj_admin','',['expires'=>1,'path'=>'/','secure'=>https(),'httponly'=>true,'samesite'=>'Strict']);out(['ok'=>true]);}
+if($path==='/api/admin/logout'&&$method==='POST'){admin(true);
+    $device=$_COOKIE['dj_alert_device']??'';
+    if (is_string($device) && preg_match('/^[a-f0-9]{64}$/D',$device)) {
+        sql('DELETE FROM dj_push_devices WHERE id=?',[$device]);
+        setcookie('dj_alert_device','',['expires'=>1,'path'=>'/','secure'=>https(),'httponly'=>true,'samesite'=>'Strict']);
+    }
+    sql('DELETE FROM admin_sessions WHERE token_hash=?',[hash('sha256',$_COOKIE['dj_admin'])]);setcookie('dj_admin','',['expires'=>1,'path'=>'/','secure'=>https(),'httponly'=>true,'samesite'=>'Strict']);out(['ok'=>true]);}
 if($path==='/api/admin/events'&&$method==='GET'){
     admin();$now=time();$r=request_schedule_rows(true);$live=choose_request_event($r,$now);
     foreach($r as &$e){
@@ -121,7 +132,8 @@ if ($method==='GET' && preg_match('#^/api/admin/events/(\d+)/requests$#',$path,$
     admin();
     $id=(int)$m[1];
     if (!sql('SELECT id FROM events WHERE id=?',[$id])->fetch()) err(404,'Event not found.');
-    out(['requests'=>queue_rows($id),'active_guests'=>count_active_guests($id)]);
+    $queue=['requests'=>queue_rows($id),'active_guests'=>count_active_guests($id)];
+    push_after_response(); out($queue);
 }
 if ($method==='POST' && preg_match('#^/api/admin/requests/(\d+)/status$#',$path,$m)) {
     admin(true);
