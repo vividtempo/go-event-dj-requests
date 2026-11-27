@@ -37,7 +37,7 @@ try {
                 const responses = {
                     '/api/admin/me': {csrf:'fixture'},
                     '/api/admin/events': {events:[event]},
-                    '/api/admin/events/1/requests': {requests:[{...song, requester_name:'Sam', note:'For the DJ', created_at:1700000000}, manualSong], active_guests:1},
+                    '/api/admin/events/1/requests': {requests:[{...song, status:'accepted', requester_name:'Sam', guest_number:1, request_number:1, request_total:2, note:'For the DJ', created_at:1700000000}, {...manualSong, guest_number:1, request_number:2, request_total:2}], active_guests:1},
                     '/api/admin/qr-link': {url:'http://fixture.test/requests'},
                     '/api/admin/settings': {}, '/api/admin/automation': {enabled:false}
                 };
@@ -113,7 +113,8 @@ try {
         assert.equal(submitted.catalog.title, song.title);
         assert.equal(submitted.note, 'For the anniversary couple');
         assert.equal(submitted.requester_name, 'Sam');
-        assert.equal(await name.inputValue(), '');
+        assert.equal(await name.inputValue(), 'Sam');
+        assert.equal(await note.inputValue(), '');
         assert.ok(await send.isHidden());
         requests = [{...song,status:'accepted'}, manualSong, accepted, played];
         await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
@@ -131,6 +132,7 @@ try {
         await page.waitForFunction(() => document.querySelector('#suggestions .music-tile') && !document.querySelector('#suggestions .store-badge'));
         await choose.press('Enter');
         assert.ok(await send.isEnabled());
+        assert.equal(await name.inputValue(), 'Sam');
         await page.unroute(song.artwork_url, failedCover);
         await page.goto('http://fixture.test/admin');
         const card = page.locator('.queue-card').first();
@@ -140,7 +142,11 @@ try {
         assert.equal(await card.locator('.store-badge').getAttribute('href'), song.store_url);
         assert.equal(await card.locator('.store-badge img').evaluate(e => e.offsetHeight), 16);
         assert.ok(await card.getByRole('heading', {name:song.title}).isVisible());
-        assert.match(await card.locator('.request-by').textContent(), /Requested by Sam/);
+        assert.match(await card.locator('.request-by').textContent(), /Accepted · Requested by Sam #1 · Request 1 of 2/);
+        assert.match(await page.locator('.queue-card').last().textContent(), /Pending · Requested by Anonymous #1 · Request 2 of 2/);
+        assert.equal(await page.getByRole('button', {name:'In the Queue (2)', exact:true}).getAttribute('aria-pressed'), 'true');
+        assert.equal(await card.getByRole('button', {name:'Accept', exact:true}).count(), 0);
+        assert.ok(await card.getByRole('button', {name:'Mark Played', exact:true}).isVisible());
         assert.equal(await card.locator('.note').textContent(), 'For the DJ');
         assert.equal(await page.locator('.queue-card').last().locator('.music-tile').count(), 1);
         assert.ok(await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth));

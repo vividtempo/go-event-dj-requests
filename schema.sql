@@ -27,6 +27,11 @@ CREATE TABLE IF NOT EXISTS requests (
  INDEX idx_event_status (event_id,status,created_at),
  CONSTRAINT fk_requests_events FOREIGN KEY(event_id) REFERENCES events(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS request_submitters (
+    request_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
+    guest_key CHAR(64) NOT NULL,
+    CONSTRAINT fk_submitter_request FOREIGN KEY (request_id) REFERENCES requests(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE TABLE IF NOT EXISTS votes (
  direction TINYINT NOT NULL DEFAULT 1,
  request_id BIGINT UNSIGNED NOT NULL,

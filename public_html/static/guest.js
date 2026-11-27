@@ -88,8 +88,22 @@ $('change-song').addEventListener('click', () => {
     $('lookup').select();
     searchCatalog();
 });
-function resetEntry() {
+let savedRequester = null;
+try {
+    savedRequester = JSON.parse(sessionStorage.getItem('gedj.requester'));
+} catch { /* Storage is optional. Keep the current tab working in memory. */ }
+
+function rememberRequester(eventId, name) {
+    savedRequester = {eventId, name: name.trim()};
+    try {
+        if (savedRequester.name) sessionStorage.setItem('gedj.requester', JSON.stringify(savedRequester));
+        else sessionStorage.removeItem('gedj.requester');
+    } catch { /* The in-memory value still works between requests. */ }
+}
+
+function resetEntry(eventId) {
     $('entry').reset();
+    $('requester').value = savedRequester && savedRequester.eventId === eventId ? savedRequester.name : '';
     setSelection(null);
 }
 
@@ -210,7 +224,7 @@ async function load() {
         const next = await api('/api/board');
         if (version !== loadVersion) return;
         if (next.event?.id !== board.event?.id || next.state !== board.state) {
-            resetEntry();
+            resetEntry(next.event?.id);
             filter = 'queue';
         }
         board = next;
@@ -231,7 +245,8 @@ $('entry').addEventListener('submit',async e => {
         if (data.event_id !== board.event?.id) return;
         filter = result.status === 'played' ? 'played' : 'queue';
         message(result.duplicate ? (result.voted ? 'Already requested. Your vote was added.' : 'That song is already on the board.') : 'Request received. Thanks!');
-        resetEntry();
+        rememberRequester(data.event_id, data.requester_name);
+        resetEntry(data.event_id);
         if (board.state === 'open') $('lookup').focus({preventScroll: true});
         await load();
     } catch (err) { message(err.message,true); }

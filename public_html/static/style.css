@@ -252,9 +252,20 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--focus); out
 .queue-stats dd { font-size: clamp(1.55rem, 3vw, 2.1rem); font-weight: 500; line-height: 1.1; }
 .queue-stats dt { font-size: .82rem; color: var(--muted); }
 .request-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: .65rem; }
-.queue-card { align-items: start; padding: 1rem; border-radius: var(--radius-control); background: var(--tile); }
+.queue-card { align-items: center; padding: .65rem .8rem; border-radius: var(--radius-control); background: var(--tile); }
 .request-row > .actions { grid-column: 1 / -1; }
-.queue-card .actions .btn { background: transparent; }
+.queue-card .actions { gap: .35rem; }
+.queue-card .actions .btn { min-height: 32px; padding: .22rem .6rem; background: transparent; font-size: .8rem; }
+.queue-card .request-by .song-status { display: inline; margin: 0; font-size: inherit; }
+#status-tabs { flex-wrap: wrap; column-gap: .85rem; }
+#status-tabs button { min-height: 34px; }
+@media (min-width: 760px) {
+  .queue-card { grid-template-columns: minmax(0, 1fr) auto auto; }
+  .queue-card > .actions { grid-column: auto; }
+}
+@media (pointer: coarse) {
+  .queue-card .actions .btn, #status-tabs button { min-height: 36px; }
+}
 .queue-tools { gap: .65rem; }
 .queue-tools .icon-button { border-color: transparent; background: transparent; }
 .vote-score { color: var(--green); }
@@ -292,7 +303,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--focus); out
   :root { --cover-size: 56px; }
   .tiprow { gap: .35rem; }
   .tiprow .btn { font-size: .8rem; }
-  .queue-card { padding: .8rem; }
+  .queue-card { padding: .65rem; }
   .queue-tools { gap: .2rem; }
 }
 @media (max-width: 380px) {

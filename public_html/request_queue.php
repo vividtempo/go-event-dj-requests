@@ -6,14 +6,53 @@ function count_active_guests(int $eventId): int {
     return (int)sql('SELECT COUNT(*) FROM guest_presence WHERE event_id=? AND last_seen>=?', [$eventId,time()-60])->fetchColumn();
 }
 
+// Existing installations create this additive table before starting a request transaction.
+function ensure_request_submitters(): void {
+    try {
+        sql('SELECT request_id FROM request_submitters LIMIT 0');
+    } catch (PDOException $e) {
+        if ($e->getCode() !== '42S02') throw $e;
+        sql("CREATE TABLE IF NOT EXISTS request_submitters (
+    request_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
+    guest_key CHAR(64) NOT NULL,
+    CONSTRAINT fk_submitter_request FOREIGN KEY (request_id) REFERENCES requests(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    }
+}
+
+// Number each browser's songs in submission order, independent of vote rank or moderation.
+function add_requester_counts(array &$rows): void {
+    $owners = array_column($rows, 'guest_key', 'id');
+    ksort($owners, SORT_NUMERIC);
+    $totals = array_count_values(array_filter($owners));
+    $guestNumbers = $counts = $ordinals = [];
+    foreach ($owners as $id => $key) {
+        if ($key === null) continue;
+        $guestNumbers[$key] ??= count($guestNumbers) + 1;
+        $counts[$key] = ($counts[$key] ?? 0) + 1;
+        $ordinals[$id] = $counts[$key];
+    }
+    foreach ($rows as &$row) {
+        $key = $row['guest_key'];
+        unset($row['guest_key']);
+        if ($key === null) continue;
+        $row['guest_number'] = $guestNumbers[$key];
+        $row['request_number'] = $ordinals[$row['id']];
+        $row['request_total'] = $totals[$key];
+    }
+}
+
 function queue_rows(int $eventId, ?string $voter=null): array {
     $public=$voter!==null;
-    $fields=$public ? 'COALESCE((SELECT direction FROM votes WHERE request_id=r.id AND voter_key=?),0) AS my_vote' : 'r.event_id,r.note,r.requester_name';
+    if (!$public) ensure_request_submitters();
+    $join=$public ? '' : 'LEFT JOIN request_submitters submitter ON submitter.request_id=r.id';
+    $fields=$public ? 'COALESCE((SELECT direction FROM votes WHERE request_id=r.id AND voter_key=?),0) AS my_vote' : 'r.event_id,r.note,r.requester_name,submitter.guest_key';
     $visible=$public ? " AND r.status IN ('pending','accepted','played')" : '';
     $rows=sql("SELECT r.id,r.title,r.artist,r.status,r.created_at,r.artwork_url,r.store_url,$fields,
         COALESCE((SELECT SUM(direction) FROM votes WHERE request_id=r.id),0) AS votes
-        FROM requests r WHERE r.event_id=? $visible ORDER BY votes DESC,r.created_at DESC,r.id DESC",
+        FROM requests r $join WHERE r.event_id=? $visible ORDER BY votes DESC,r.created_at DESC,r.id DESC",
         $public ? [$voter,$eventId] : [$eventId])->fetchAll();
+    if (!$public) add_requester_counts($rows);
     foreach ($rows as &$row) {
         foreach (['id','created_at','votes'] as $key) $row[$key]=(int)$row[$key];
         if ($public) {
@@ -62,6 +101,7 @@ function submit_request(array $data): array {
         $store=$track['store_url'];
     }
     $guest=guest();
+    ensure_request_submitters();
     return tx(function() use($guest,$title,$artist,$name,$note,$art,$store,$data){
         rate($guest,'submit',6,600);
         rate(iphash(),'ip_submit',400,600);
@@ -85,6 +125,7 @@ function submit_request(array $data): array {
         sql('INSERT INTO requests(event_id,title,artist,requester_name,note,artwork_url,store_url,norm_title,norm_artist,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)',
             [$id,$title,$artist,$name,$note,$art,$store,norm($title),norm($artist),time()]);
         $requestId=(int)db()->lastInsertId();
+        sql('INSERT INTO request_submitters(request_id,guest_key) VALUES(?,?)',[$requestId,$guest]);
         sql('INSERT INTO votes(request_id,voter_key,created_at) VALUES(?,?,?)',[$requestId,$guest,time()]);
         return ['ok'=>true,'duplicate'=>false,'request_id'=>$requestId];
     });

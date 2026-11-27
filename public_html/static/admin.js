@@ -1,5 +1,5 @@
 const $ = id=>document.getElementById(id);
-let csrf='', events=[],selectedEvent=null, songs=[], scheduleConflict=false, statusFilter='pending';
+let csrf='', events=[],selectedEvent=null, songs=[], scheduleConflict=false, statusFilter='queue';
 function msg(text,bad=false){const x=$('flash');x.textContent=text;x.className='flash'+(bad?' bad':'');clearTimeout(window.flashTimer);window.flashTimer=setTimeout(()=>x.className='hidden',5500)}
 async function api(url, method='GET', body=null){const headers={};if(body!==null)headers['content-type']='application/json';if(csrf&&method!=='GET')headers['x-csrf-token']=csrf;const res=await fetch(url,{method,headers,credentials:'same-origin',body:body!==null?JSON.stringify(body):undefined});const data=await res.json().catch(()=>({}));if(!res.ok){if(res.status===401&&url!=='/api/admin/login')showLogin();throw Error(data.detail||'Request failed')}return data;}
 function showLogin(){$('login-screen').className='panel login';$('dashboard').className='hidden';csrf='';clearApiKey()}
@@ -74,18 +74,30 @@ function copySongButton(song) {
 function renderQueue() {
     const box = $('queue-list');
     box.replaceChildren();
+    const views = {
+        queue: [...songs.filter(song => song.status === 'accepted'), ...songs.filter(song => song.status === 'pending')],
+        played: songs.filter(song => song.status === 'played'),
+        declined: songs.filter(song => song.status === 'declined')
+    };
+    const labels = {queue:'In the Queue', played:'Played', declined:'Declined'};
     for (const tab of document.querySelectorAll('[data-status]')) {
         const status = tab.dataset.status;
-        tab.classList.toggle('active', status === statusFilter);
         tab.setAttribute('aria-pressed', String(status === statusFilter));
-        tab.textContent = status[0].toUpperCase()+status.slice(1)+' ('+songs.filter(s => s.status === status).length+')';
+        tab.textContent = labels[status]+' ('+views[status].length+')';
     }
-    const filtered = songs.filter(song => song.status === statusFilter);
-    if (!filtered.length) box.append(el('div', 'empty', 'No '+statusFilter+' requests.'));
+    const filtered = views[statusFilter];
+    if (!filtered.length) box.append(el('div', 'empty', statusFilter === 'queue' ? 'No songs in the queue.' : 'No '+statusFilter+' requests.'));
     for (const song of filtered) {
         const card = el('article', 'request-row queue-card');
         const time = new Date(song.created_at*1000).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
-        const details = [el('div', 'request-by', 'Requested by '+(song.requester_name || 'Anonymous')+' · '+time)];
+        const name = (song.requester_name || 'Anonymous') + (song.guest_number ? ' #'+song.guest_number : '');
+        const count = song.request_number ? ' · Request '+song.request_number+' of '+song.request_total : '';
+        const byline = el('div', 'request-by', 'Requested by '+name+count+' · '+time);
+        if (statusFilter === 'queue') {
+            const label = song.status === 'accepted' ? 'Accepted' : 'Pending';
+            byline.prepend(el('span', 'song-status '+song.status, label), ' · ');
+        }
+        const details = [byline];
         if (song.note) details.push(el('p', 'note', song.note));
         const identity = trackIdentity(song, {titleTag:'h3', details});
 
@@ -99,7 +111,7 @@ function renderQueue() {
         const actions = el('div', 'actions');
         if (song.status === 'pending') actions.append(btn('Accept', () => setStatus(song.id, 'accepted')));
         if (song.status === 'pending' || song.status === 'accepted') {
-            actions.append(btn('Mark played', () => setStatus(song.id, 'played')),
+            actions.append(btn('Mark Played', () => setStatus(song.id, 'played')),
                 btn('Decline', () => setStatus(song.id, 'declined'), 'small decline'));
         } else {
             actions.append(btn('Restore', () => setStatus(song.id, 'pending')));
